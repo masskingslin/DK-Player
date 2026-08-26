@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Dark Background -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="315"
+                android:endColor="#0F172A"
+                android:startColor="#1E293B"
+                android:type="linear" />
+        </shape>
+    </item>
+
+    <!-- Centered DK Player Logo (Keep within safe margin to avoid overscan clipping) -->
+    <item
+        android:bottom="36dp"
+        android:gravity="center"
+        android:left="64dp"
+        android:right="64dp"
+        android:top="36dp">
+        <vector
+            android:width="192dp"
+            android:height="108dp"
+            android:viewportWidth="192"
+            android:viewportHeight="108">
+            <!-- "DK" Badge Shape -->
+            <path
+                android:fillColor="#FFD54F"
+                android:pathData="M30,24 h30 c16,0 26,10 26,30 c0,20 -10,30 -26,30 h-30 z M46,38 v32 h12 c8,0 12,-5 12,-16 c0,-11 -4,-16 -12,-16 z" />
+            <path
+                android:fillColor="#FFFFFF"
+                android:pathData="M95,24 h16 v24 l18,-24 h20 l-22,28 l24,32 h-21 l-19,-26 v26 h-16 z" />
+        </vector>
+    </item>
+</layer-list>
