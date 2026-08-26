@@ -1,29 +1,33 @@
-import java.io.FileInputStream
-import java.util.Properties
-
-val keystorePropertiesFile = rootProject.file("keystore.properties")
-val keystoreProperties = Properties()
-if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 android {
-    // ... namespace, compileSdk, defaultConfig ...
+    namespace = "com.dk.tvplayer"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.dk.tvplayer"
+        minSdk = 21
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
 
     signingConfigs {
         create("release") {
-            // Read from keystore.properties locally, or fall back to GitHub Actions Environment Variables
-            val storeFilePath = keystoreProperties.getProperty("RELEASE_STORE_FILE")
-                ?: System.getenv("RELEASE_STORE_FILE")
-            val storePasswordProp = keystoreProperties.getProperty("RELEASE_STORE_PASSWORD")
-                ?: System.getenv("RELEASE_STORE_PASSWORD")
-            val keyAliasProp = keystoreProperties.getProperty("RELEASE_KEY_ALIAS")
-                ?: System.getenv("RELEASE_KEY_ALIAS")
-            val keyPasswordProp = keystoreProperties.getProperty("RELEASE_KEY_PASSWORD")
-                ?: System.getenv("RELEASE_KEY_PASSWORD")
+            val storeFilePath = System.getenv("RELEASE_STORE_FILE") ?: "../dkplayer-release.jks"
+            val storePasswordProp = System.getenv("RELEASE_STORE_PASSWORD") ?: "King7777"
+            val keyAliasProp = System.getenv("RELEASE_KEY_ALIAS") ?: "King7777"
+            val keyPasswordProp = System.getenv("RELEASE_KEY_PASSWORD") ?: "King7777"
 
-            if (storeFilePath != null && file(storeFilePath).exists()) {
-                storeFile = file(storeFilePath)
+            val keystoreFile = file(storeFilePath)
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
                 storePassword = storePasswordProp
                 keyAlias = keyAliasProp
                 keyPassword = keyPasswordProp
@@ -46,4 +50,48 @@ android {
             isDebuggable = true
         }
     }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+        freeCompilerArgs += listOf(
+            "-opt-in=androidx.tv.material3.ExperimentalTvMaterial3Api",
+            "-opt-in=androidx.media3.common.util.UnstableApi"
+        )
+    }
+
+    buildFeatures {
+        compose = true
+    }
+}
+
+dependencies {
+    // AndroidX Media3
+    val media3Version = "1.6.0"
+    implementation("androidx.media3:media3-exoplayer:$media3Version")
+    implementation("androidx.media3:media3-exoplayer-hls:$media3Version")
+    implementation("androidx.media3:media3-exoplayer-dash:$media3Version")
+    implementation("androidx.media3:media3-ui:$media3Version")
+    implementation("androidx.media3:media3-common:$media3Version")
+
+    // Room Database & KSP
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
+
+    // Jetpack Compose for TV
+    implementation("androidx.tv:tv-foundation:1.0.0-alpha12")
+    implementation("androidx.tv:tv-material:1.0.0")
+
+    // Core AndroidX
+    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
 }
