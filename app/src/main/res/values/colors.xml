@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand / Primary Colors -->
+    <color name="tv_primary">#FFD54F</color>
+    <color name="tv_primary_variant">#FFC107</color>
+    <color name="tv_primary_dark">#0F172A</color>
+
+    <!-- TV Backgrounds & Surfaces -->
+    <color name="tv_background">#050505</color>
+    <color name="tv_surface_dark">#121212</color>
+    <color name="tv_surface_drawer">#F2101010</color>
+    <color name="tv_overlay_gradient_end">#F7050505</color>
+
+    <!-- Typography & Accents -->
+    <color name="tv_text_primary">#FFFFFF</color>
+    <color name="tv_text_secondary">#B0B0B0</color>
+    <color name="tv_text_muted">#808080</color>
+    <color name="tv_highlight_yellow">#FFD54F</color>
+
+    <!-- Remote Focus Highlights -->
+    <color name="tv_focus_container">#33FFD54F</color>
+    <color name="tv_selected_item">#22FFFFFF</color>
+</resources>
