@@ -1,3 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">DK Player</string>
+    <string name="app_banner_desc">DK Player for Android TV and Fire TV</string>
+    <string name="tv_guide_title">TV Guide</string>
+    <string name="no_epg_available">No EPG Program Information Available</string>
+    <string name="up_next_prefix">UP NEXT:</string>
+    <string name="live_stream_label">Live Stream Broadcast</string>
+    <string name="loading_channels">Loading playlist and guide data…</string>
+    <string name="error_stream_playback">Failed to load stream. Retrying…</string>
 </resources>
