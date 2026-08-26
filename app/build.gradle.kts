@@ -18,32 +18,12 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    signingConfigs {
-        create("release") {
-            val storeFilePath = System.getenv("RELEASE_STORE_FILE") ?: "../dkplayer-release.jks"
-            val storePasswordProp = System.getenv("RELEASE_STORE_PASSWORD") ?: "King7777"
-            val keyAliasProp = System.getenv("RELEASE_KEY_ALIAS") ?: "King7777"
-            val keyPasswordProp = System.getenv("RELEASE_KEY_PASSWORD") ?: "King7777"
-
-            val keystoreFile = file(storeFilePath)
-            if (keystoreFile.exists()) {
-                storeFile = keystoreFile
-                storePassword = storePasswordProp
-                keyAlias = keyAliasProp
-                keyPassword = keyPasswordProp
-            }
-        }
-    }
-
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+            isShrinkResources = false
+            // Uses built-in signing so no keystore files or passwords are required
+            signingConfig = signingConfigs.getByName("debug")
         }
         debug {
             applicationIdSuffix = ".debug"
@@ -70,7 +50,7 @@ android {
 }
 
 dependencies {
-    // AndroidX Media3
+    // AndroidX Media3 (ExoPlayer, HLS, DASH, UI)
     val media3Version = "1.6.0"
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-exoplayer-hls:$media3Version")
@@ -78,17 +58,17 @@ dependencies {
     implementation("androidx.media3:media3-ui:$media3Version")
     implementation("androidx.media3:media3-common:$media3Version")
 
-    // Room Database & KSP
+    // Room Database
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // Jetpack Compose for TV
+    // Compose for TV & Material3
     implementation("androidx.tv:tv-foundation:1.0.0-alpha12")
     implementation("androidx.tv:tv-material:1.0.0")
 
-    // Core AndroidX
+    // AndroidX Foundation & Lifecycle
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
