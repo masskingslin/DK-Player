@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.DKPlayer" parent="Theme.Material3.Dark.NoActionBar">
+        <!-- Window & Fullscreen Configuration for Leanback Displays -->
+        <item name="android:windowBackground">@color/tv_background</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowOverscan">false</item>
+        <item name="android:windowIsTranslucent">false</item>
+
+        <!-- System Bar Transparency -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+
+        <!-- Material Palette Mapping -->
+        <item name="colorPrimary">@color/tv_primary</item>
+        <item name="colorSurface">@color/tv_surface_dark</item>
+        <item name="android:colorBackground">@color/tv_background</item>
+    </style>
+</resources>
