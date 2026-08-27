@@ -17,5 +17,7 @@ data class TvUiState(
     val customStreams: List<StreamEntity> = emptyList(),
     val localVideos: List<LocalVideoItem> = emptyList(),
     val searchQuery: String = "",
-    val isOverlayVisible: Boolean = true
+    val isOverlayVisible: Boolean = true,
+    val favoriteChannelIds: Set<String> = emptySet(),
+    val showFavoritesOnly: Boolean = false
 )
