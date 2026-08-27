@@ -10,6 +10,7 @@ data class TvUiState(
     val nextProgram: EpgEntity? = null,
     val isSidebarOpen: Boolean = false,
     val isOverlayVisible: Boolean = true,
+    val shuffleEnabled: Boolean = false,
     val isLoading: Boolean = false,
     val errorMessage: String? = null
 ) {
