@@ -1,3 +1,5 @@
+@file:OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package com.dk.tvplayer.ui.player
 
 import android.app.Activity
@@ -6,7 +8,6 @@ import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -50,14 +51,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
-import com.stream.tvplayer.ui.TvPlayerViewModel
+import com.dk.tvplayer.ui.TvPlayerViewModel
 import kotlinx.coroutines.delay
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-@OptIn(UnstableApi::class)
 @Composable
 fun PhonePlayerScreen(
     mediaUrl: String,
@@ -128,7 +127,6 @@ fun PhonePlayerScreen(
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.5f))
             ) {
-                // Top Action Bar
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -159,7 +157,6 @@ fun PhonePlayerScreen(
                     }
                 }
 
-                // Center Play/Pause & Skip Controls
                 Row(
                     modifier = Modifier.align(Alignment.Center),
                     horizontalArrangement = Arrangement.spacedBy(32.dp),
@@ -202,7 +199,6 @@ fun PhonePlayerScreen(
                     }
                 }
 
-                // Bottom Timeline & Scrub Bar
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
