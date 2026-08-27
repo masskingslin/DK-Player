@@ -19,7 +19,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LiveTv
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -38,9 +37,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.stream.tvplayer.data.local.HistoryEntity
-import com.stream.tvplayer.data.local.StreamEntity
-import com.stream.tvplayer.ui.TvPlayerViewModel
+import com.dk.tvplayer.data.local.HistoryEntity
+import com.dk.tvplayer.data.local.StreamEntity
+import com.dk.tvplayer.ui.TvPlayerViewModel
 
 @Composable
 fun HomeHubScreen(
@@ -83,7 +82,6 @@ fun HomeHubScreen(
                 )
             }
 
-            // Playback History
             if (state.history.isNotEmpty()) {
                 item {
                     Text(
@@ -104,7 +102,6 @@ fun HomeHubScreen(
                 }
             }
 
-            // Saved Streams
             item {
                 Text(
                     text = "Saved Streams & IPTV",
