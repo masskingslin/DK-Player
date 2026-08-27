@@ -1,313 +1,258 @@
 package com.stream.tvplayer.ui.screens
 
 import android.view.KeyEvent
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.*
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.media3.common.Player
-import androidx.tv.material3.*
-import com.stream.tvplayer.data.local.ChannelEntity
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.stream.tvplayer.player.TvExoPlayerManager
 import com.stream.tvplayer.ui.TvPlayerViewModel
 import com.stream.tvplayer.ui.components.TvEpgOverlay
 import com.stream.tvplayer.ui.components.TvPlayerControls
 import com.stream.tvplayer.ui.components.TvPlayerSurface
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun TvMainScreen(viewModel: TvPlayerViewModel) {
-    val uiState by viewModel.uiState.collectAsState()
-    val focusRequester = remember { FocusRequester() }
-    var player by remember { mutableStateOf<Player?>(null) }
-    var playerView by remember { mutableStateOf<androidx.media3.ui.PlayerView?>(null) }
-    var isScreenLocked by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    // Intercept back button to close drawer first
-    BackHandler(enabled = uiState.isSidebarOpen) {
-        viewModel.toggleSidebar(open = false)
+    val playerManager = remember {
+        TvExoPlayerManager(context).apply { initialize() }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { playerManager.release() }
+    }
+
+    LaunchedEffect(uiState.currentChannel?.streamUrl) {
+        uiState.currentChannel?.let { channel ->
+            playerManager.playStream(channel.streamUrl)
+        }
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .onPreviewKeyEvent { keyEvent ->
-                if (keyEvent.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-
-                // While locked, disable channel/sidebar shortcuts but let normal D-pad focus
-                // movement and clicks (e.g. reaching and pressing the Lock button) work as usual.
-                if (isScreenLocked) return@onPreviewKeyEvent false
-
-                when (keyEvent.nativeKeyEvent.keyCode) {
-                    KeyEvent.KEYCODE_DPAD_CENTER,
-                    KeyEvent.KEYCODE_ENTER -> {
-                        if (!uiState.isSidebarOpen) {
+            .background(Color.Black)
+            .onKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown) {
+                    when (event.nativeKeyEvent.keyCode) {
+                        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                             viewModel.toggleOverlay()
                             true
-                        } else false
-                    }
-                    KeyEvent.KEYCODE_DPAD_LEFT,
-                    KeyEvent.KEYCODE_MENU -> {
-                        if (!uiState.isSidebarOpen) {
-                            viewModel.toggleSidebar(open = true)
-                            true
-                        } else false
-                    }
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                        if (uiState.isSidebarOpen) {
-                            viewModel.toggleSidebar(open = false)
-                            true
-                        } else false
-                    }
-                    KeyEvent.KEYCODE_DPAD_UP,
-                    KeyEvent.KEYCODE_CHANNEL_UP -> {
-                        if (!uiState.isSidebarOpen) {
+                        }
+                        KeyEvent.KEYCODE_DPAD_LEFT -> {
+                            if (!uiState.isSidebarOpen) {
+                                viewModel.toggleSidebar(true)
+                                true
+                            } else false
+                        }
+                        KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> {
                             viewModel.prevChannel()
                             true
-                        } else false
-                    }
-                    KeyEvent.KEYCODE_DPAD_DOWN,
-                    KeyEvent.KEYCODE_CHANNEL_DOWN -> {
-                        if (!uiState.isSidebarOpen) {
+                        }
+                        KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> {
                             viewModel.nextChannel()
                             true
-                        } else false
+                        }
+                        KeyEvent.KEYCODE_BACK -> {
+                            if (uiState.isSidebarOpen) {
+                                viewModel.toggleSidebar(false)
+                                true
+                            } else false
+                        }
+                        else -> false
                     }
-                    else -> false
-                }
+                } else false
             }
+            .focusable()
     ) {
-        // Video Surface
-        TvPlayerSurface(
-            streamUrl = uiState.currentChannel?.streamUrl,
-            licenseServerUrl = uiState.currentChannel?.licenseServerUrl,
-            modifier = Modifier.fillMaxSize(),
-            onPlayerReady = { player = it },
-            onPlayerViewReady = { playerView = it }
-        )
+        TvPlayerSurface(player = playerManager.exoPlayer)
 
-        // Leanback EPG Overlay
-        uiState.currentChannel?.let { activeChannel ->
-            TvEpgOverlay(
-                channel = activeChannel,
-                currentProgram = uiState.currentProgram,
-                nextProgram = uiState.nextProgram,
-                visible = uiState.isOverlayVisible && !uiState.isSidebarOpen,
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
-        }
-
-        // VLC-style playback controls: previous / play-pause / next / mute / playlist.
-        // Shares the same visibility + auto-hide timing as the EPG overlay.
+        // Overlay: Controls & EPG
         AnimatedVisibility(
-            visible = (uiState.isOverlayVisible || isScreenLocked) && !uiState.isSidebarOpen,
-            enter = slideInHorizontally { 0 },
-            exit = slideOutHorizontally { 0 },
-            modifier = Modifier.align(Alignment.BottomCenter)
+            visible = uiState.isOverlayVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize()
         ) {
-            TvPlayerControls(
-                player = player,
-                playerView = playerView,
-                onPrevious = { viewModel.prevChannel() },
-                onNext = { viewModel.nextChannel() },
-                onOpenPlaylist = { viewModel.toggleSidebar(open = true) },
-                isLocked = isScreenLocked,
-                onToggleLock = { isScreenLocked = !isScreenLocked },
-                shuffleEnabled = uiState.shuffleEnabled,
-                onToggleShuffle = { viewModel.toggleShuffle() }
-            )
+            Box(modifier = Modifier.fillMaxSize()) {
+                TvEpgOverlay(
+                    channel = uiState.currentChannel,
+                    currentProgram = uiState.currentProgram,
+                    nextProgram = uiState.nextProgram,
+                    modifier = Modifier.align(Alignment.BottomStart)
+                )
+
+                TvPlayerControls(
+                    isPlaying = playerManager.exoPlayer?.isPlaying ?: true,
+                    isShuffle = uiState.shuffleEnabled,
+                    isFavorite = uiState.currentChannel?.id?.let { uiState.favoriteChannelIds.contains(it) } ?: false,
+                    onPrevious = { viewModel.prevChannel() },
+                    onPlayPause = {
+                        val player = playerManager.exoPlayer
+                        if (player != null) {
+                            if (player.isPlaying) player.pause() else player.play()
+                        }
+                    },
+                    onNext = { viewModel.nextChannel() },
+                    onToggleShuffle = { viewModel.toggleShuffle() },
+                    onToggleFavorite = {
+                        uiState.currentChannel?.id?.let { viewModel.toggleFavorite(it) }
+                    },
+                    onToggleSidebar = { viewModel.toggleSidebar() },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 140.dp)
+                )
+            }
         }
 
-        // Side Navigation Drawer
+        // Slide-out Channel Sidebar
         AnimatedVisibility(
             visible = uiState.isSidebarOpen,
-            enter = slideInHorizontally { -it },
-            exit = slideOutHorizontally { -it },
-            modifier = Modifier.align(Alignment.CenterStart)
+            enter = slideInHorizontally(initialOffsetX = { -it }),
+            exit = slideOutHorizontally(targetOffsetX = { -it }),
+            modifier = Modifier.fillMaxHeight()
         ) {
-            LaunchedEffect(Unit) {
-                focusRequester.requestFocus()
-            }
-
             Surface(
-                colors = SurfaceDefaults.colors(containerColor = Color(0xF2101010)),
                 modifier = Modifier
-                    .fillMaxHeight()
                     .width(360.dp)
-                    .focusRequester(focusRequester)
+                    .fillMaxHeight(),
+                color = Color.Black.copy(alpha = 0.92f)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "TV Guide",
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = Color.White,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-
-                    // --- Search field ---
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0x1AFFFFFF), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        BasicTextField(
-                            value = uiState.searchQuery,
-                            onValueChange = { viewModel.updateSearchQuery(it) },
-                            singleLine = true,
-                            textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
-                            cursorBrush = SolidColor(Color.White),
-                            decorationBox = { inner ->
-                                if (uiState.searchQuery.isEmpty()) {
-                                    Text("Search channels…", color = Color.Gray, fontSize = 14.sp)
-                                }
-                                inner()
-                            },
-                            modifier = Modifier.fillMaxWidth()
+                        Text(
+                            text = "Channels",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
                         )
+                        IconButton(onClick = { viewModel.toggleSidebar(false) }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close Sidebar", tint = Color.White)
+                        }
                     }
 
-                    Spacer(Modifier.height(12.dp))
-
-                    // --- Category + Favorites filter chips ---
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    OutlinedTextField(
+                        value = uiState.searchQuery,
+                        onValueChange = { viewModel.updateSearchQuery(it) },
+                        placeholder = { Text("Search channel or number...") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        singleLine = true,
                         modifier = Modifier.fillMaxWidth()
-                    ) {
+                    )
+
+                    // Categories Row
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         item {
                             FilterChip(
-                                label = "All",
-                                selected = uiState.selectedCategory == null && !uiState.showFavoritesOnly,
-                                onClick = {
-                                    viewModel.selectCategory(null)
-                                    if (uiState.showFavoritesOnly) viewModel.toggleShowFavoritesOnly()
-                                }
+                                selected = uiState.selectedCategory == null,
+                                onClick = { viewModel.selectCategory(null) },
+                                label = { Text("All") }
                             )
                         }
                         item {
                             FilterChip(
-                                label = "★ Favorites",
                                 selected = uiState.showFavoritesOnly,
-                                onClick = { viewModel.toggleShowFavoritesOnly() }
+                                onClick = { viewModel.toggleShowFavoritesOnly() },
+                                label = { Text("Favorites") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Favorite, contentDescription = null, modifier = Modifier.size(16.dp))
+                                }
                             )
                         }
                         items(uiState.categories) { category ->
                             FilterChip(
-                                label = category,
                                 selected = uiState.selectedCategory == category,
-                                onClick = {
-                                    viewModel.selectCategory(
-                                        if (uiState.selectedCategory == category) null else category
-                                    )
-                                }
+                                onClick = { viewModel.selectCategory(category) },
+                                label = { Text(category) }
                             )
                         }
                     }
 
-                    Spacer(Modifier.height(12.dp))
-
-                    // --- Channel list (search + category + favorites applied) ---
-                    val visibleChannels = uiState.filteredChannels
-
-                    if (visibleChannels.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(text = "No channels found", color = Color.Gray, fontSize = 13.sp)
-                        }
-                    } else {
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            items(visibleChannels, key = { it.id }) { channel ->
-                                val isSelected = channel == uiState.currentChannel
-                                val isFavorite = uiState.favoriteChannelIds.contains(channel.id)
-
-                                DenseListItem(
-                                    selected = isSelected,
-                                    onClick = {
+                    // Channel List
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(uiState.filteredChannels) { channel ->
+                            val isSelected = channel.id == uiState.currentChannel?.id
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
                                         viewModel.selectChannel(channel)
-                                        viewModel.toggleSidebar(open = false)
+                                        viewModel.toggleSidebar(false)
                                     },
-                                    headlineContent = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = if (isFavorite) "★ " else "☆ ",
-                                                color = if (isFavorite) Color(0xFFFFD54F) else Color.Gray,
-                                                fontSize = 14.sp,
-                                                modifier = Modifier.clickable {
-                                                    viewModel.toggleFavorite(channel.id)
-                                                }
-                                            )
-                                            Text(
-                                                text = "${channel.channelNumber}. ${channel.name}",
-                                                color = if (isSelected) Color(0xFFFFD54F) else Color.White
-                                            )
-                                        }
-                                    },
-                                    supportingContent = channel.groupName?.let {
-                                        { Text(text = it, color = Color.Gray, fontSize = 12.sp) }
-                                    },
-                                    colors = ListItemDefaults.colors(
-                                        focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                        selectedContainerColor = Color(0x22FFFFFF)
-                                    )
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color(0xFF1E1E1E)
                                 )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(if (isSelected) MaterialTheme.colorScheme.primary else Color.DarkGray)
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = "${channel.channelNumber}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                    }
+                                    Text(
+                                        text = channel.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else Color.White
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isFocused by interactionSource.collectIsFocusedAsState()
-    val bg = when {
-        isFocused -> Color(0xFFFFD54F)
-        selected -> Color(0xFF4C6EF5)
-        else -> Color(0x1AFFFFFF)
-    }
-    val textColor = if (isFocused) Color.Black else Color.White
-    Box(
-        modifier = Modifier
-            .background(bg, RoundedCornerShape(16.dp))
-            .focusable(interactionSource = interactionSource)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            )
-            .padding(horizontal = 14.dp, vertical = 6.dp)
-    ) {
-        Text(text = label, color = textColor, fontSize = 13.sp)
     }
 }
