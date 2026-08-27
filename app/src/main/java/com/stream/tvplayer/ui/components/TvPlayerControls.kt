@@ -1,76 +1,82 @@
 package com.stream.tvplayer.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 @Composable
 fun TvPlayerControls(
     isPlaying: Boolean,
-    isShuffle: Boolean,
-    isFavorite: Boolean,
-    onPrevious: () -> Unit,
     onPlayPause: () -> Unit,
-    onNext: () -> Unit,
-    onToggleShuffle: () -> Unit,
-    onToggleFavorite: () -> Unit,
-    onToggleSidebar: () -> Unit,
+    onNextChannel: () -> Unit,
+    onPreviousChannel: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier
-            .clip(CircleShape)
-            .background(Color.Black.copy(alpha = 0.65f))
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+            .fillMaxWidth()
+            .background(Color.Black.copy(alpha = 0.6f))
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onToggleSidebar) {
-            Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Channel List", tint = Color.White)
-        }
-
-        IconButton(onClick = onToggleShuffle) {
+        IconButton(onClick = onPreviousChannel) {
             Icon(
-                Icons.Default.Shuffle,
-                contentDescription = "Shuffle",
-                tint = if (isShuffle) MaterialTheme.colorScheme.primary else Color.LightGray
+                imageVector = Icons.Default.SkipPrevious,
+                contentDescription = "Previous Channel",
+                tint = Color.White,
+                modifier = Modifier.size(32.dp)
             )
         }
 
-        IconButton(onClick = onPrevious) {
-            Icon(Icons.Default.SkipPrevious, contentDescription = "Previous Channel", tint = Color.White)
-        }
-
-        IconButton(
-            onClick = onPlayPause,
-            colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.primary)
-        ) {
+        IconButton(onClick = onPlayPause) {
             Icon(
-                if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                 contentDescription = "Play/Pause",
-                tint = MaterialTheme.colorScheme.onPrimary
+                tint = Color.White,
+                modifier = Modifier.size(40.dp)
             )
         }
 
-        IconButton(onClick = onNext) {
-            Icon(Icons.Default.SkipNext, contentDescription = "Next Channel", tint = Color.White)
+        IconButton(onClick = onNextChannel) {
+            Icon(
+                imageVector = Icons.Default.SkipNext,
+                contentDescription = "Next Channel",
+                tint = Color.White,
+                modifier = Modifier.size(32.dp)
+            )
         }
 
-        IconButton(onClick = onToggleFavorite) {
+        IconButton(onClick = { /* Cycle Aspect Ratio */ }) {
             Icon(
-                if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                contentDescription = "Favorite",
-                tint = if (isFavorite) Color.Red else Color.White
+                imageVector = Icons.Default.AspectRatio,
+                contentDescription = "Aspect Ratio",
+                tint = Color.White
+            )
+        }
+
+        IconButton(onClick = { /* Audio Tracks */ }) {
+            Icon(
+                imageVector = Icons.Default.Audiotrack,
+                contentDescription = "Audio Tracks",
+                tint = Color.White
             )
         }
     }
