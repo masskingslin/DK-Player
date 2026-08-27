@@ -1,77 +1,63 @@
 package com.stream.tvplayer.data.repository
 
-import com.stream.tvplayer.data.local.ChannelEntity
-import com.stream.tvplayer.data.local.EpgEntity
 import com.stream.tvplayer.data.local.HistoryDao
 import com.stream.tvplayer.data.local.HistoryEntity
+import com.stream.tvplayer.data.local.LocalVideoItem
+import com.stream.tvplayer.data.local.LocalVideoScanner
 import com.stream.tvplayer.data.local.StreamDao
 import com.stream.tvplayer.data.local.StreamEntity
-import com.stream.tvplayer.data.local.TvDao
+import com.stream.tvplayer.data.local.TvChannelDao
+import com.stream.tvplayer.data.local.TvChannelEntity
+import com.stream.tvplayer.data.local.TvEpgDao
+import com.stream.tvplayer.data.local.TvEpgProgramEntity
 import com.stream.tvplayer.data.parser.M3uParser
-import com.stream.tvplayer.data.parser.XmlTvParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
-import java.net.URL
+import java.io.InputStream
 
 class TvRepository(
-    private val tvDao: TvDao,
+    private val channelDao: TvChannelDao,
+    private val epgDao: TvEpgDao,
     private val historyDao: HistoryDao,
-    private val streamDao: StreamDao
+    private val streamDao: StreamDao,
+    private val scanner: LocalVideoScanner
 ) {
+    fun getAllChannels(): Flow<List<TvChannelEntity>> = channelDao.getAllChannels()
+    fun getAllGroups(): Flow<List<String>> = channelDao.getAllGroups()
+    fun getPrograms(channelId: String): Flow<List<TvEpgProgramEntity>> =
+        epgDao.getProgramsForChannel(channelId, System.currentTimeMillis())
 
-    fun getChannelsStream(): Flow<List<ChannelEntity>> = tvDao.getAllChannels()
+    fun getHistory(): Flow<List<HistoryEntity>> = historyDao.getRecentHistory()
+    fun getCustomStreams(): Flow<List<StreamEntity>> = streamDao.getAllStreams()
 
-    suspend fun syncPlaylist(url: String) = withContext(Dispatchers.IO) {
-        val stream = URL(url).openStream()
-        tvDao.clearChannels()
-        stream.use { input ->
-            M3uParser.parseStream(input) { batch ->
-                tvDao.insertChannels(batch)
-            }
-        }
+    suspend fun insertCustomStream(name: String, url: String) = withContext(Dispatchers.IO) {
+        streamDao.insertStream(StreamEntity(name = name, streamUrl = url))
     }
 
-    suspend fun syncEpg(url: String) = withContext(Dispatchers.IO) {
-        val stream = URL(url).openStream()
-        tvDao.clearExpiredEpg(System.currentTimeMillis())
-        stream.use { input ->
-            XmlTvParser.parseStream(input) { batch ->
-                tvDao.insertEpgPrograms(batch)
-            }
-        }
+    suspend fun deleteCustomStream(stream: StreamEntity) = withContext(Dispatchers.IO) {
+        streamDao.deleteStream(stream)
     }
 
-    suspend fun getLiveSchedule(channelTvgId: String): Pair<EpgEntity?, EpgEntity?> =
+    suspend fun saveHistory(url: String, title: String, position: Long, duration: Long) =
         withContext(Dispatchers.IO) {
-            val now = System.currentTimeMillis()
-            val current = tvDao.getCurrentProgram(channelTvgId, now)
-            val next = tvDao.getNextProgram(channelTvgId, current?.endEpochMs ?: now)
-            Pair(current, next)
+            historyDao.insertOrUpdate(
+                HistoryEntity(
+                    mediaUrl = url,
+                    title = title,
+                    lastPositionMs = position,
+                    durationMs = duration
+                )
+            )
         }
 
-    // --- History ---
+    suspend fun loadM3u(inputStream: InputStream) = withContext(Dispatchers.IO) {
+        val parsed = M3uParser.parse(inputStream)
+        channelDao.clearChannels()
+        channelDao.insertChannels(parsed)
+    }
 
-    fun getHistoryStream(): Flow<List<HistoryEntity>> = historyDao.getHistoryStream()
-
-    suspend fun saveHistoryEntry(entry: HistoryEntity): Long =
-        withContext(Dispatchers.IO) { historyDao.upsert(entry) }
-
-    suspend fun deleteHistoryEntry(id: Long) =
-        withContext(Dispatchers.IO) { historyDao.delete(id) }
-
-    suspend fun clearHistory() =
-        withContext(Dispatchers.IO) { historyDao.clearAll() }
-
-    // --- Streams ---
-
-    fun getStreamsFlow(): Flow<List<StreamEntity>> = streamDao.getStreamsFlow()
-
-    suspend fun addStream(name: String, url: String): Long =
-        withContext(Dispatchers.IO) {
-            streamDao.insert(StreamEntity(name = name, url = url, savedAt = System.currentTimeMillis()))
-        }
-
-    suspend fun deleteStream(id: Long) =
-        withContext(Dispatchers.IO) { streamDao.delete(id) }
+    suspend fun scanLocalVideos(): List<LocalVideoItem> = withContext(Dispatchers.IO) {
+        scanner.scanDeviceVideos()
+    }
 }
