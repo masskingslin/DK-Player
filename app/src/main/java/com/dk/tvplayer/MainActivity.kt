@@ -18,13 +18,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import com.dk.tvplayer.data.local.LocalVideoScanner
+import com.dk.tvplayer.data.local.TvDatabase
+import com.dk.tvplayer.data.repository.TvRepository
+import com.dk.tvplayer.player.TvExoPlayerManager
 import com.dk.tvplayer.ui.PhoneAppRoot
-import com.stream.tvplayer.data.local.LocalVideoScanner
-import com.stream.tvplayer.data.local.TvDatabase
-import com.stream.tvplayer.data.repository.TvRepository
-import com.stream.tvplayer.player.TvExoPlayerManager
-import com.stream.tvplayer.ui.TvPlayerViewModel
-import com.stream.tvplayer.ui.screens.TvMainScreen
+import com.dk.tvplayer.ui.TvPlayerViewModel
+import com.dk.tvplayer.ui.screens.TvMainScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -53,7 +53,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         requestRequiredPermissions()
 
         setContent {
