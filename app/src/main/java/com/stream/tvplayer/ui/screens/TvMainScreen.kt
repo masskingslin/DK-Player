@@ -15,8 +15,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.tv.foundation.lazy.list.TvLazyColumn
-import androidx.tv.foundation.lazy.list.itemsIndexed
+import import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.tv.material3.*
 import com.stream.tvplayer.ui.TvPlayerViewModel
 import com.stream.tvplayer.ui.components.TvEpgOverlay
@@ -123,36 +123,31 @@ fun TvMainScreen(viewModel: TvPlayerViewModel) {
                     )
 
                     TvLazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        itemsIndexed(uiState.channels) { index, channel ->
-                            val isSelected = index == uiState.currentChannelIndex
-
-                            DenseListItem(
-                                selected = isSelected,
-                                onClick = {
-                                    viewModel.selectChannel(index)
-                                    viewModel.toggleSidebar(open = false)
-                                },
-                                headlineContent = {
-                                    Text(
-                                        text = "${channel.channelNumber}. ${channel.name}",
-                                        color = if (isSelected) Color(0xFFFFD54F) else Color.White
-                                    )
-                                },
-                                supportingContent = channel.groupName?.let {
-                                    { Text(text = it, color = Color.Gray, fontSize = 12.sp) }
-                                },
-                                colors = ListItemDefaults.colors(
-                                    focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    selectedContainerColor = Color(0x22FFFFFF)
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-        }
+                        LazyColumn(
+    verticalArrangement = Arrangement.spacedBy(6.dp),
+    modifier = Modifier.fillMaxSize()
+) {
+    itemsIndexed(uiState.channels) { index, channel ->
+        val isSelected = index == uiState.currentChannelIndex
+        DenseListItem(
+            selected = isSelected,
+            onClick = {
+                viewModel.selectChannel(index)
+                viewModel.toggleSidebar(open = false)
+            },
+            headlineContent = {
+                Text(
+                    text = "${channel.channelNumber}. ${channel.name}",
+                    color = if (isSelected) Color(0xFFFFD54F) else Color.White
+                )
+            },
+            supportingContent = channel.groupName?.let {
+                { Text(text = it, color = Color.Gray, fontSize = 12.sp) }
+            },
+            colors = ListItemDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                selectedContainerColor = Color(0x22FFFFFF)
+            )
+        )
     }
 }
