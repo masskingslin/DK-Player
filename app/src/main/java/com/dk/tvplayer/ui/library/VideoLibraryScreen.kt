@@ -35,9 +35,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.stream.tvplayer.data.local.LocalVideoItem
-import com.stream.tvplayer.data.local.TvChannelEntity
-import com.stream.tvplayer.ui.TvPlayerViewModel
+import com.dk.tvplayer.data.local.LocalVideoItem
+import com.dk.tvplayer.data.local.TvChannelEntity
+import com.dk.tvplayer.ui.TvPlayerViewModel
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
