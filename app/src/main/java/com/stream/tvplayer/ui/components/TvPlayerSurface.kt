@@ -10,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import com.stream.tvplayer.player.TvExoPlayerManager
@@ -19,10 +20,18 @@ import com.stream.tvplayer.player.TvExoPlayerManager
 fun TvPlayerSurface(
     streamUrl: String?,
     licenseServerUrl: String?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onPlayerReady: (Player) -> Unit = {},
+    onPlayerViewReady: (PlayerView) -> Unit = {}
 ) {
     val context = LocalContext.current
     val playerManager = remember { TvExoPlayerManager(context) }
+
+    // Hand the underlying player up to the caller once, so a control bar
+    // elsewhere in the tree can drive play/pause without owning the player.
+    LaunchedEffect(Unit) {
+        onPlayerReady(playerManager.player)
+    }
 
     LaunchedEffect(streamUrl, licenseServerUrl) {
         if (!streamUrl.isNullOrBlank()) {
@@ -47,6 +56,7 @@ fun TvPlayerSurface(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
+                onPlayerViewReady(this)
             }
         }
     )
