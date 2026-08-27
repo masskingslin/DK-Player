@@ -1,4 +1,4 @@
-package com.dk.tvplayer.ui.components
+package com.stream.tvplayer.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -18,8 +18,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import com.dk.tvplayer.data.local.ChannelEntity
-import com.dk.tvplayer.data.local.EpgEntity
+import com.stream.tvplayer.data.local.ChannelEntity
+import com.stream.tvplayer.data.local.EpgEntity
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
