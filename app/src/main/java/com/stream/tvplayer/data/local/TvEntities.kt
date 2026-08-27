@@ -1,36 +1,46 @@
 package com.stream.tvplayer.data.local
 
 import androidx.room.Entity
-import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(
-    tableName = "channels",
-    indices = [Index(value = ["tvgId"]), Index(value = ["groupName"])]
-)
-data class ChannelEntity(
+@Entity(tableName = "channels")
+data class TvChannelEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val channelNumber: Int,
+    val channelId: String,
     val name: String,
+    val logoUrl: String? = null,
+    val groupTitle: String = "General",
     val streamUrl: String,
-    val tvgId: String?,
-    val logoUrl: String?,
-    val groupName: String?,
-    val licenseServerUrl: String? = null // For Widevine DRM
+    val isFavorite: Boolean = false
 )
 
-@Entity(
-    tableName = "epg_programs",
-    indices = [
-        Index(value = ["channelId", "startEpochMs", "endEpochMs"]),
-        Index(value = ["startEpochMs"])
-    ]
-)
-data class EpgEntity(
+@Entity(tableName = "epg_programs")
+data class TvEpgProgramEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val channelId: String,
     val title: String,
-    val description: String?,
-    val startEpochMs: Long,
-    val endEpochMs: Long
+    val description: String? = null,
+    val startTime: Long,
+    val endTime: Long
+)
+
+@Entity(tableName = "playback_history")
+data class HistoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val mediaUrl: String,
+    val title: String,
+    val lastPositionMs: Long,
+    val durationMs: Long,
+    val lastWatchedTimestamp: Long = System.currentTimeMillis(),
+    val isLiveStream: Boolean = false
+)
+
+@Entity(tableName = "custom_streams")
+data class StreamEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val streamUrl: String,
+    val groupTitle: String = "Custom Streams",
+    val logoUrl: String? = null,
+    val addedDate: Long = System.currentTimeMillis()
 )
