@@ -52,6 +52,15 @@ android {
 dependencies {
     // AndroidX Media3 (ExoPlayer, HLS, DASH, UI)
     val media3Version = "1.6.0"
+
+dependencies {
+    // Material Components (required for Theme.Material3.* styles)
+    implementation("com.google.android.material:material:1.12.0")
+
+    // AndroidX Media3 (ExoPlayer, HLS, DASH, UI)
+    val media3Version = "1.6.0"
+    implementation("androidx.media3:media3-exoplayer:$media3Version")
+    ...
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-exoplayer-hls:$media3Version")
     implementation("androidx.media3:media3-exoplayer-dash:$media3Version")
