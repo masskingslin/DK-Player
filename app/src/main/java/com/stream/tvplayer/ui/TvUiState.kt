@@ -27,7 +27,7 @@ data class TvUiState(
             .distinct()
             .sorted()
 
-    /** Channels after search + category + favorites filters are applied, for the sidebar list. */
+    /** Channels after search + category + favorites filters, for the sidebar list. */
     val filteredChannels: List<ChannelEntity>
         get() = channels.filter { channel ->
             val matchesQuery = searchQuery.isBlank() ||
