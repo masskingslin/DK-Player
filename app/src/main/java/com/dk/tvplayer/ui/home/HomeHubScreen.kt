@@ -15,18 +15,21 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -41,10 +44,12 @@ import com.dk.tvplayer.data.local.HistoryEntity
 import com.dk.tvplayer.data.local.StreamEntity
 import com.dk.tvplayer.ui.TvPlayerViewModel
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeHubScreen(
     viewModel: TvPlayerViewModel,
-    onPlayMedia: (url: String, title: String) -> Unit
+    onPlayMedia: (url: String, title: String) -> Unit,
+    onBack: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     var showDialog by remember { mutableStateOf(false) }
@@ -60,6 +65,16 @@ fun HomeHubScreen(
     }
 
     Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("History & Saved Streams") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showDialog = true },
@@ -75,13 +90,6 @@ fun HomeHubScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            item {
-                Text(
-                    text = "DK-Player Hub",
-                    style = MaterialTheme.typography.headlineMedium
-                )
-            }
-
             if (state.history.isNotEmpty()) {
                 item {
                     Text(
