@@ -6,36 +6,30 @@ import org.xmlpull.v1.XmlPullParser
 import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.TimeZone
 
 object XmlTvParser {
-    private val xmlTvDateFormat = SimpleDateFormat("yyyyMMddHHmmss Z", Locale.US)
 
-    private fun parseDate(dateStr: String?): Long {
-        if (dateStr.isNullOrBlank()) return 0L
-        return try {
-            val cleanStr = dateStr.trim()
-            val formatted = if (!cleanStr.contains(" ")) "$cleanStr +0000" else cleanStr
-            xmlTvDateFormat.parse(formatted)?.time ?: 0L
-        } catch (_: Exception) {
-            0L
-        }
+    private val xmlTvDateFormat = SimpleDateFormat("yyyyMMddHHmmss Z", Locale.US).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
     }
 
-    fun parseStream(
+    suspend fun parseStream(
         inputStream: InputStream,
+        batchSize: Int = 200,
         onBatchParsed: suspend (List<EpgEntity>) -> Unit
     ) {
-        val parser = Xml.newPullParser().apply {
-            setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
-            setInput(inputStream, "UTF-8")
-        }
+        val parser = Xml.newPullParser()
+        parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
+        parser.setInput(inputStream, null)
 
-        val batch = mutableListOf<EpgEntity>()
         var eventType = parser.eventType
-        var currentChannel: String? = null
-        var currentStart = 0L
-        var currentEnd = 0L
-        var currentTitle: String? = null
+        val batch = mutableListOf<EpgEntity>()
+
+        var currentChannelTvgId: String? = null
+        var currentStartMs: Long = 0L
+        var currentEndMs: Long = 0L
+        var currentTitle: String = ""
         var currentDesc: String? = null
 
         while (eventType != XmlPullParser.END_DOCUMENT) {
@@ -43,39 +37,67 @@ object XmlTvParser {
                 XmlPullParser.START_TAG -> {
                     when (parser.name) {
                         "programme" -> {
-                            currentChannel = parser.getAttributeValue(null, "channel")
-                            currentStart = parseDate(parser.getAttributeValue(null, "start"))
-                            currentEnd = parseDate(parser.getAttributeValue(null, "stop"))
-                            currentTitle = null
+                            currentChannelTvgId = parser.getAttributeValue(null, "channel")
+                            val startStr = parser.getAttributeValue(null, "start")
+                            val stopStr = parser.getAttributeValue(null, "stop")
+
+                            currentStartMs = parseXmlTvDate(startStr)
+                            currentEndMs = parseXmlTvDate(stopStr)
+                            currentTitle = "No Title"
                             currentDesc = null
                         }
-                        "title" -> if (currentChannel != null) currentTitle = parser.nextText()
-                        "desc" -> if (currentChannel != null) currentDesc = parser.nextText()
+                        "title" -> {
+                            if (currentChannelTvgId != null) {
+                                currentTitle = parser.nextText() ?: "No Title"
+                            }
+                        }
+                        "desc" -> {
+                            if (currentChannelTvgId != null) {
+                                currentDesc = parser.nextText()
+                            }
+                        }
                     }
                 }
                 XmlPullParser.END_TAG -> {
-                    if (parser.name == "programme" && currentChannel != null && currentTitle != null) {
-                        batch.add(
-                            EpgEntity(
-                                channelId = currentChannel,
-                                title = currentTitle,
-                                description = currentDesc,
-                                startEpochMs = currentStart,
-                                endEpochMs = currentEnd
+                    if (parser.name == "programme" && currentChannelTvgId != null) {
+                        if (currentEndMs > System.currentTimeMillis() - 86400000L) {
+                            batch.add(
+                                EpgEntity(
+                                    channelTvgId = currentChannelTvgId,
+                                    title = currentTitle,
+                                    description = currentDesc,
+                                    startEpochMs = currentStartMs,
+                                    endEpochMs = currentEndMs
+                                )
                             )
-                        )
-                        if (batch.size >= 500) {
-                            kotlinx.coroutines.runBlocking { onBatchParsed(batch.toList()) }
+                        }
+
+                        if (batch.size >= batchSize) {
+                            onBatchParsed(batch.toList())
                             batch.clear()
                         }
+                        currentChannelTvgId = null
                     }
                 }
             }
             eventType = parser.next()
         }
+
         if (batch.isNotEmpty()) {
-            kotlinx.coroutines.runBlocking { onBatchParsed(batch.toList()) }
+            onBatchParsed(batch.toList())
             batch.clear()
+        }
+    }
+
+    private fun parseXmlTvDate(raw: String?): Long {
+        if (raw.isNullOrBlank()) return 0L
+        return try {
+            val normalized = if (!raw.contains(" ")) {
+                if (raw.length >= 14) "${raw.substring(0, 14)} +0000" else raw
+            } else raw
+            xmlTvDateFormat.parse(normalized)?.time ?: 0L
+        } catch (_: Exception) {
+            0L
         }
     }
 }
