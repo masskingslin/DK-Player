@@ -71,7 +71,7 @@ fun VideoLibraryScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(32.dp),
-                    horizontalAlignment = Alignment.CenterVertically,
+                    horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
