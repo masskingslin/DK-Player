@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,7 +53,7 @@ fun NewStreamDialog(
                 if (isError) {
                     Text(
                         text = "Please provide a valid stream link.",
-                        color = androidx.compose.material3.MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.error
                     )
                 }
             }
