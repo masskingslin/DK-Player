@@ -31,7 +31,13 @@ class TvPlayerViewModel(
                 _uiState.update { current ->
                     current.copy(
                         channels = list,
-                        filteredChannels = filterChannels(list, current.selectedCategory, current.searchQuery)
+                        filteredChannels = filterChannels(
+                            list,
+                            current.selectedCategory,
+                            current.searchQuery,
+                            current.favoriteChannelIds,
+                            current.showFavoritesOnly
+                        )
                     )
                 }
             }
@@ -60,7 +66,13 @@ class TvPlayerViewModel(
         _uiState.update { current ->
             current.copy(
                 selectedCategory = category,
-                filteredChannels = filterChannels(current.channels, category, current.searchQuery)
+                filteredChannels = filterChannels(
+                    current.channels,
+                    category,
+                    current.searchQuery,
+                    current.favoriteChannelIds,
+                    current.showFavoritesOnly
+                )
             )
         }
     }
@@ -69,7 +81,46 @@ class TvPlayerViewModel(
         _uiState.update { current ->
             current.copy(
                 searchQuery = query,
-                filteredChannels = filterChannels(current.channels, current.selectedCategory, query)
+                filteredChannels = filterChannels(
+                    current.channels,
+                    current.selectedCategory,
+                    query,
+                    current.favoriteChannelIds,
+                    current.showFavoritesOnly
+                )
+            )
+        }
+    }
+
+    fun toggleFavorite(channelId: String) {
+        _uiState.update { current ->
+            val updated = current.favoriteChannelIds.toMutableSet()
+            if (!updated.add(channelId)) updated.remove(channelId)
+            current.copy(
+                favoriteChannelIds = updated,
+                filteredChannels = filterChannels(
+                    current.channels,
+                    current.selectedCategory,
+                    current.searchQuery,
+                    updated,
+                    current.showFavoritesOnly
+                )
+            )
+        }
+    }
+
+    fun toggleShowFavoritesOnly() {
+        _uiState.update { current ->
+            val newValue = !current.showFavoritesOnly
+            current.copy(
+                showFavoritesOnly = newValue,
+                filteredChannels = filterChannels(
+                    current.channels,
+                    current.selectedCategory,
+                    current.searchQuery,
+                    current.favoriteChannelIds,
+                    newValue
+                )
             )
         }
     }
@@ -127,12 +178,15 @@ class TvPlayerViewModel(
     private fun filterChannels(
         channels: List<TvChannelEntity>,
         category: String,
-        query: String
+        query: String,
+        favoriteIds: Set<String>,
+        showFavoritesOnly: Boolean
     ): List<TvChannelEntity> {
         return channels.filter { channel ->
             val matchesCategory = (category == "All" || channel.groupTitle.equals(category, ignoreCase = true))
             val matchesQuery = query.isEmpty() || channel.name.contains(query, ignoreCase = true)
-            matchesCategory && matchesQuery
+            val matchesFavorite = !showFavoritesOnly || favoriteIds.contains(channel.channelId)
+            matchesCategory && matchesQuery && matchesFavorite
         }
     }
 
