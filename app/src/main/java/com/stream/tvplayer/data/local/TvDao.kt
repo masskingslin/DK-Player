@@ -9,50 +9,32 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TvDao {
+    // ... unchanged, exactly as you have it ...
+}
 
-    @Query("SELECT * FROM channels ORDER BY channelNumber ASC")
-    fun getAllChannels(): Flow<List<ChannelEntity>>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertChannels(channels: List<ChannelEntity>)
-
-    @Query("DELETE FROM channels")
-    suspend fun clearChannels()
+@Dao
+interface HistoryDao {
+    @Query("SELECT * FROM history ORDER BY lastPlayedAt DESC")
+    fun getHistoryStream(): Flow<List<HistoryEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertEpgPrograms(programs: List<EpgEntity>)
+    suspend fun upsert(entry: HistoryEntity): Long
 
-    @Query("DELETE FROM epg_programs WHERE endEpochMs < :nowEpochMs")
-    suspend fun clearExpiredEpg(nowEpochMs: Long)
+    @Query("DELETE FROM history WHERE id = :id")
+    suspend fun delete(id: Long)
 
-    @Query("DELETE FROM epg_programs")
-    suspend fun clearAllEpg()
+    @Query("DELETE FROM history")
+    suspend fun clearAll()
+}
 
-    @Query(
-        """
-        SELECT * FROM epg_programs 
-        WHERE channelId = :channelTvgId 
-          AND startEpochMs <= :nowEpochMs 
-          AND endEpochMs > :nowEpochMs 
-        LIMIT 1
-        """
-    )
-    suspend fun getCurrentProgram(channelTvgId: String, nowEpochMs: Long): EpgEntity?
+@Dao
+interface StreamDao {
+    @Query("SELECT * FROM streams ORDER BY savedAt DESC")
+    fun getStreamsFlow(): Flow<List<StreamEntity>>
 
-    @Query(
-        """
-        SELECT * FROM epg_programs 
-        WHERE channelId = :channelTvgId 
-          AND startEpochMs >= :fromEpochMs 
-        ORDER BY startEpochMs ASC 
-        LIMIT 1
-        """
-    )
-    suspend fun getNextProgram(channelTvgId: String, fromEpochMs: Long): EpgEntity?
+    @Insert
+    suspend fun insert(stream: StreamEntity): Long
 
-    @Transaction
-    suspend fun refreshPlaylist(channels: List<ChannelEntity>) {
-        clearChannels()
-        insertChannels(channels)
-    }
+    @Query("DELETE FROM streams WHERE id = :id")
+    suspend fun delete(id: Long)
 }
