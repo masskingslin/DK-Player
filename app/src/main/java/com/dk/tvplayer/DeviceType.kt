@@ -11,7 +11,6 @@ object DeviceType {
         if (uiModeManager?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION) {
             return true
         }
-        val packageManager = context.packageManager
-        return packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+        return context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
     }
 }
