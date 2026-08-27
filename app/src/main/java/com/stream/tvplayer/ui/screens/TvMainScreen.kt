@@ -1,5 +1,6 @@
 package com.stream.tvplayer.ui.screens
 
+import com.stream.tvplayer.ui.components.TvPlayerControls
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
