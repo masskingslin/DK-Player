@@ -1,88 +1,60 @@
 package com.stream.tvplayer.data.parser
 
-import com.stream.tvplayer.data.local.ChannelEntity
-import java.io.BufferedReader
+import com.stream.tvplayer.data.local.TvChannelEntity
 import java.io.InputStream
-import java.io.InputStreamReader
 import java.util.regex.Pattern
 
 object M3uParser {
+    private val EXTINF_PATTERN = Pattern.compile(
+        "#EXTINF:(?:-1|[0-9]+)(?:\\s+(?:tvg-id=\"([^\"]*)\")|(?:tvg-name=\"([^\"]*)\")|(?:tvg-logo=\"([^\"]*)\")|(?:group-title=\"([^\"]*)\"))*,(.*)"
+    )
 
-    private val EXTINF_PATTERN = Pattern.compile("(?i)#EXTINF:(?:-1|[0-9]+)(?:\\s+(.*))?,(.*)")
-    private val TVG_ID_PATTERN = Pattern.compile("(?i)tvg-id=\"([^\"]*)\"")
-    private val TVG_NAME_PATTERN = Pattern.compile("(?i)tvg-name=\"([^\"]*)\"")
-    private val TVG_LOGO_PATTERN = Pattern.compile("(?i)tvg-logo=\"([^\"]*)\"")
-    private val GROUP_TITLE_PATTERN = Pattern.compile("(?i)group-title=\"([^\"]*)\"")
-    private val TVG_CHNO_PATTERN = Pattern.compile("(?i)tvg-chno=\"([^\"]*)\"")
+    fun parse(inputStream: InputStream): List<TvChannelEntity> {
+        val channels = mutableListOf<TvChannelEntity>()
+        val reader = inputStream.bufferedReader()
+        var currentLine: String?
+        var tempId: String? = null
+        var tempName: String? = null
+        var tempLogo: String? = null
+        var tempGroup: String? = null
 
-    suspend fun parseStream(
-        inputStream: InputStream,
-        batchSize: Int = 100,
-        onBatchParsed: suspend (List<ChannelEntity>) -> Unit
-    ) {
-        val reader = BufferedReader(InputStreamReader(inputStream))
-        var line: String?
-        var channelIndex = 1
-        val batch = mutableListOf<ChannelEntity>()
+        while (reader.readLine().also { currentLine = it } != null) {
+            val line = currentLine!!.trim()
+            if (line.isEmpty()) continue
 
-        var currentTvgId: String? = null
-        var currentName: String? = null
-        var currentLogo: String? = null
-        var currentGroup: String? = null
-        var currentChannelNumber: Int? = null
+            if (line.startsWith("#EXTINF:")) {
+                tempId = extractAttribute(line, "tvg-id")
+                tempName = extractAttribute(line, "tvg-name")
+                tempLogo = extractAttribute(line, "tvg-logo")
+                tempGroup = extractAttribute(line, "group-title")
 
-        while (reader.readLine().also { line = it } != null) {
-            val trimmed = line?.trim() ?: continue
-            if (trimmed.isEmpty()) continue
-
-            if (trimmed.startsWith("#EXTINF:", ignoreCase = true)) {
-                val matcher = EXTINF_PATTERN.matcher(trimmed)
-                if (matcher.find()) {
-                    val attributes = matcher.group(1) ?: ""
-                    val title = matcher.group(2)?.trim() ?: ""
-
-                    currentTvgId = extractAttribute(TVG_ID_PATTERN, attributes)
-                    val tvgName = extractAttribute(TVG_NAME_PATTERN, attributes)
-                    currentName = if (!tvgName.isNullOrBlank()) tvgName else title
-                    currentLogo = extractAttribute(TVG_LOGO_PATTERN, attributes)
-                    currentGroup = extractAttribute(GROUP_TITLE_PATTERN, attributes) ?: "General"
-                    currentChannelNumber = extractAttribute(TVG_CHNO_PATTERN, attributes)?.toIntOrNull()
-                }
-            } else if (!trimmed.startsWith("#")) {
-                if (!currentName.isNullOrBlank()) {
-                    val entity = ChannelEntity(
-                        channelNumber = currentChannelNumber ?: channelIndex,
-                        name = currentName,
-                        logoUrl = currentLogo,
-                        streamUrl = trimmed,
-                        groupName = currentGroup ?: "General",
-                        tvgId = currentTvgId ?: currentName,
-                        isFavorite = false
+                val titleIndex = line.lastIndexOf(',')
+                val displayTitle = if (titleIndex != -1) line.substring(titleIndex + 1).trim() else "Channel"
+                if (tempName.isNullOrEmpty()) tempName = displayTitle
+            } else if (!line.startsWith("#") && line.isNotEmpty()) {
+                if (!tempName.isNullOrEmpty()) {
+                    channels.add(
+                        TvChannelEntity(
+                            channelId = tempId ?: tempName.lowercase().replace(" ", "_"),
+                            name = tempName,
+                            logoUrl = tempLogo,
+                            groupTitle = tempGroup ?: "General",
+                            streamUrl = line
+                        )
                     )
-                    batch.add(entity)
-                    channelIndex++
-
-                    if (batch.size >= batchSize) {
-                        onBatchParsed(batch.toList())
-                        batch.clear()
-                    }
                 }
-                currentTvgId = null
-                currentName = null
-                currentLogo = null
-                currentGroup = null
-                currentChannelNumber = null
+                tempId = null
+                tempName = null
+                tempLogo = null
+                tempGroup = null
             }
         }
-
-        if (batch.isNotEmpty()) {
-            onBatchParsed(batch.toList())
-            batch.clear()
-        }
+        return channels
     }
 
-    private fun extractAttribute(pattern: Pattern, text: String): String? {
-        val matcher = pattern.matcher(text)
-        return if (matcher.find()) matcher.group(1)?.trim() else null
+    private fun extractAttribute(line: String, attrName: String): String? {
+        val pattern = Pattern.compile("$attrName=\"([^\"]*)\"")
+        val matcher = pattern.matcher(line)
+        return if (matcher.find()) matcher.group(1) else null
     }
 }
