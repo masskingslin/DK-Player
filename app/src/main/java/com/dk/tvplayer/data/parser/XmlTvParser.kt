@@ -29,25 +29,27 @@ object XmlTvParser {
             val tagName = parser.name
             when (eventType) {
                 XmlPullParser.START_TAG -> {
-                    if (tagName.equals("programme", ignoreCase = true)) {
+                    if ("programme".equals(tagName, ignoreCase = true)) {
                         currentChannel = parser.getAttributeValue(null, "channel")
                         val startStr = parser.getAttributeValue(null, "start")
                         val stopStr = parser.getAttributeValue(null, "stop")
                         startTime = parseDate(startStr)
                         endTime = parseDate(stopStr)
-                    } else if (tagName.equals("title", ignoreCase = true)) {
+                    } else if ("title".equals(tagName, ignoreCase = true)) {
                         title = parser.nextText()
-                    } else if (tagName.equals("desc", ignoreCase = true)) {
+                    } else if ("desc".equals(tagName, ignoreCase = true)) {
                         description = parser.nextText()
                     }
                 }
                 XmlPullParser.END_TAG -> {
-                    if (tagName.equals("programme", ignoreCase = true)) {
-                        if (currentChannel != null && title != null) {
+                    if ("programme".equals(tagName, ignoreCase = true)) {
+                        val chId = currentChannel
+                        val progTitle = title
+                        if (chId != null && progTitle != null) {
                             programs.add(
                                 TvEpgProgramEntity(
-                                    channelId = currentChannel,
-                                    title = title,
+                                    channelId = chId,
+                                    title = progTitle,
                                     description = description,
                                     startTime = startTime,
                                     endTime = endTime
