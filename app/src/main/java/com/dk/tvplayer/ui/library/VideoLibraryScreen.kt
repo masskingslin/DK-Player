@@ -16,11 +16,17 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -102,18 +108,82 @@ fun VideoLibraryScreen(
                 }
             }
         } else {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 160.dp),
-                contentPadding = PaddingValues(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(state.channels) { channel ->
-                    IptvChannelCard(
-                        channel = channel,
-                        onClick = { onPlayVideo(channel.streamUrl, channel.name) }
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Search bar
+                OutlinedTextField(
+                    value = state.searchQuery,
+                    onValueChange = { viewModel.updateSearchQuery(it) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    placeholder = { Text("Search channels...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    singleLine = true
+                )
+
+                // Category + Favorites filter row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .height(48.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = state.showFavoritesOnly,
+                        onClick = { viewModel.toggleShowFavoritesOnly() },
+                        label = { Text("Favorites") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (state.showFavoritesOnly) Icons.Default.Star else Icons.Default.StarBorder,
+                                contentDescription = null
+                            )
+                        }
                     )
+                    state.categories.forEach { category ->
+                        FilterChip(
+                            selected = state.selectedCategory == category,
+                            onClick = { viewModel.selectCategory(category) },
+                            label = { Text(category) }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                if (state.filteredChannels.isEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "No channels match your filters",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 160.dp),
+                        contentPadding = PaddingValues(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(state.filteredChannels) { channel ->
+                            IptvChannelCard(
+                                channel = channel,
+                                isFavorite = state.favoriteChannelIds.contains(channel.channelId),
+                                onToggleFavorite = { viewModel.toggleFavorite(channel.channelId) },
+                                onClick = {
+                                    viewModel.selectChannel(channel)
+                                    onPlayVideo(channel.streamUrl, channel.name)
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -153,7 +223,12 @@ fun LocalVideoCard(video: LocalVideoItem, onClick: () -> Unit) {
 }
 
 @Composable
-fun IptvChannelCard(channel: TvChannelEntity, onClick: () -> Unit) {
+fun IptvChannelCard(
+    channel: TvChannelEntity,
+    isFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onClick: () -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -161,12 +236,25 @@ fun IptvChannelCard(channel: TvChannelEntity, onClick: () -> Unit) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Icon(
-                imageVector = Icons.Default.Tv,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.size(36.dp)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Tv,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(36.dp)
+                )
+                IconButton(onClick = onToggleFavorite) {
+                    Icon(
+                        imageVector = if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                        contentDescription = if (isFavorite) "Remove from favorites" else "Add to favorites",
+                        tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = channel.name,
