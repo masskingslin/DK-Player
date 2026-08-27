@@ -2,6 +2,8 @@ package com.dk.tvplayer.data.repository
 
 import com.dk.tvplayer.data.local.HistoryDao
 import com.dk.tvplayer.data.local.HistoryEntity
+import com.dk.tvplayer.data.local.LocalAudioItem
+import com.dk.tvplayer.data.local.LocalAudioScanner
 import com.dk.tvplayer.data.local.LocalVideoItem
 import com.dk.tvplayer.data.local.LocalVideoScanner
 import com.dk.tvplayer.data.local.StreamDao
@@ -21,7 +23,8 @@ class TvRepository(
     private val epgDao: TvEpgDao,
     private val historyDao: HistoryDao,
     private val streamDao: StreamDao,
-    private val scanner: LocalVideoScanner
+    private val videoScanner: LocalVideoScanner,
+    private val audioScanner: LocalAudioScanner
 ) {
     fun getAllChannels(): Flow<List<TvChannelEntity>> = channelDao.getAllChannels()
     fun getAllGroups(): Flow<List<String>> = channelDao.getAllGroups()
@@ -58,6 +61,10 @@ class TvRepository(
     }
 
     suspend fun scanLocalVideos(): List<LocalVideoItem> = withContext(Dispatchers.IO) {
-        scanner.scanDeviceVideos()
+        videoScanner.scanDeviceVideos()
+    }
+
+    suspend fun scanLocalAudio(): List<LocalAudioItem> = withContext(Dispatchers.IO) {
+        audioScanner.scanDeviceAudio()
     }
 }
