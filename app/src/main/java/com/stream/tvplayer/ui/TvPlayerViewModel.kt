@@ -3,6 +3,7 @@ package com.stream.tvplayer.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.stream.tvplayer.data.local.ChannelEntity
 import com.stream.tvplayer.data.local.TvDatabase
 import com.stream.tvplayer.data.repository.TvRepository
 import kotlinx.coroutines.Dispatchers
@@ -87,6 +88,16 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /**
+     * Select a channel by object reference. Needed because the sidebar now shows a
+     * filtered/reordered list (search + category + favorites) whose on-screen position
+     * no longer matches the channel's index in the full [TvUiState.channels] list.
+     */
+    fun selectChannel(channel: ChannelEntity) {
+        val index = _uiState.value.channels.indexOf(channel)
+        if (index >= 0) selectChannel(index)
+    }
+
     fun toggleShuffle() {
         _uiState.update { it.copy(shuffleEnabled = !it.shuffleEnabled) }
     }
@@ -149,6 +160,28 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
         autoHideJob = viewModelScope.launch {
             delay(5000)
             _uiState.update { it.copy(isOverlayVisible = false) }
+        }
+    }
+
+    // --- Search / category / favorites --------------------------------------
+
+    fun updateSearchQuery(query: String) {
+        _uiState.update { it.copy(searchQuery = query) }
+    }
+
+    fun selectCategory(category: String?) {
+        _uiState.update { it.copy(selectedCategory = category) }
+    }
+
+    fun toggleShowFavoritesOnly() {
+        _uiState.update { it.copy(showFavoritesOnly = !it.showFavoritesOnly) }
+    }
+
+    fun toggleFavorite(channelId: Long) {
+        _uiState.update { state ->
+            val updated = state.favoriteChannelIds.toMutableSet()
+            if (!updated.add(channelId)) updated.remove(channelId)
+            state.copy(favoriteChannelIds = updated)
         }
     }
 }
