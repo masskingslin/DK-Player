@@ -11,7 +11,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DividerDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -54,14 +53,14 @@ fun SettingsScreen() {
                     checked = hwAcceleration,
                     onCheckedChange = { hwAcceleration = it }
                 )
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = DividerDefaults.color)
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
                 SettingToggleItem(
                     title = "Background Audio Playback",
                     subtitle = "Continue playing audio when app is minimized",
                     checked = backgroundPlay,
                     onCheckedChange = { backgroundPlay = it }
                 )
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = DividerDefaults.color)
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
                 SettingToggleItem(
                     title = "Auto Resume Playback",
                     subtitle = "Remember and restore playback positions across launches",
