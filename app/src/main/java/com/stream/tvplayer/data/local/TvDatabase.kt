@@ -6,12 +6,14 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [ChannelEntity::class, EpgEntity::class],
-    version = 1,
+    entities = [ChannelEntity::class, EpgEntity::class, HistoryEntity::class, StreamEntity::class],
+    version = 2,
     exportSchema = false
 )
 abstract class TvDatabase : RoomDatabase() {
     abstract fun tvDao(): TvDao
+    abstract fun historyDao(): HistoryDao
+    abstract fun streamDao(): StreamDao
 
     companion object {
         @Volatile
