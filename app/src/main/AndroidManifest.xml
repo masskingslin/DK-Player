@@ -1,52 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Network & Hardware Permissions -->
+    <!-- Network -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
-    <!-- Leanback & TV Hardware Declarations -->
-    <!-- required="false" allows sideloading across both TV and standard Android devices -->
-    <uses-feature
-        android:name="android.software.leanback"
-        android:required="false" />
+    <!-- Storage & Local Media -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- Features: Universal Phone + TV Compatibility -->
     <uses-feature
         android:name="android.hardware.touchscreen"
         android:required="false" />
     <uses-feature
-        android:name="android.hardware.screen.landscape"
-        android:required="false" />
-    <uses-feature
-        android:name="android.hardware.wifi"
+        android:name="android.software.leanback"
         android:required="false" />
 
     <application
         android:allowBackup="true"
+        android:icon="@drawable/ic_launcher"
         android:banner="@drawable/tv_banner"
-        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:largeHeap="true"
         android:supportsRtl="true"
         android:theme="@style/Theme.DKPlayer"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        tools:targetApi="35">
 
         <activity
             android:name=".MainActivity"
-            android:banner="@drawable/tv_banner"
-            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher"
-            android:launchMode="singleTask"
-            android:screenOrientation="landscape">
-
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize|uiMode"
+            android:theme="@style/Theme.DKPlayer">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
-                <!-- Standard Android Launcher -->
                 <category android:name="android.intent.category.LAUNCHER" />
-
-                <!-- Android TV & Fire TV Home Screen Grid Category -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
