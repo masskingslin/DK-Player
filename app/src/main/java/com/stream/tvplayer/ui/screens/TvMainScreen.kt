@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.media3.common.Player
 import androidx.tv.material3.*
 import com.stream.tvplayer.ui.TvPlayerViewModel
 import com.stream.tvplayer.ui.components.TvEpgOverlay
@@ -27,6 +28,9 @@ import com.stream.tvplayer.ui.components.TvPlayerSurface
 fun TvMainScreen(viewModel: TvPlayerViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val focusRequester = remember { FocusRequester() }
+    var player by remember { mutableStateOf<Player?>(null) }
+    var playerView by remember { mutableStateOf<androidx.media3.ui.PlayerView?>(null) }
+    var isScreenLocked by remember { mutableStateOf(false) }
 
     // Intercept back button to close drawer first
     BackHandler(enabled = uiState.isSidebarOpen) {
@@ -38,6 +42,10 @@ fun TvMainScreen(viewModel: TvPlayerViewModel) {
             .fillMaxSize()
             .onPreviewKeyEvent { keyEvent ->
                 if (keyEvent.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+
+                // While locked, disable channel/sidebar shortcuts but let normal D-pad focus
+                // movement and clicks (e.g. reaching and pressing the Lock button) work as usual.
+                if (isScreenLocked) return@onPreviewKeyEvent false
 
                 when (keyEvent.nativeKeyEvent.keyCode) {
                     KeyEvent.KEYCODE_DPAD_CENTER,
@@ -82,7 +90,9 @@ fun TvMainScreen(viewModel: TvPlayerViewModel) {
         TvPlayerSurface(
             streamUrl = uiState.currentChannel?.streamUrl,
             licenseServerUrl = uiState.currentChannel?.licenseServerUrl,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            onPlayerReady = { player = it },
+            onPlayerViewReady = { playerView = it }
         )
 
         // Leanback EPG Overlay
@@ -93,6 +103,27 @@ fun TvMainScreen(viewModel: TvPlayerViewModel) {
                 nextProgram = uiState.nextProgram,
                 visible = uiState.isOverlayVisible && !uiState.isSidebarOpen,
                 modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+
+        // VLC-style playback controls: previous / play-pause / next / mute / playlist.
+        // Shares the same visibility + auto-hide timing as the EPG overlay.
+        AnimatedVisibility(
+            visible = (uiState.isOverlayVisible || isScreenLocked) && !uiState.isSidebarOpen,
+            enter = slideInHorizontally { 0 },
+            exit = slideOutHorizontally { 0 },
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            TvPlayerControls(
+                player = player,
+                playerView = playerView,
+                onPrevious = { viewModel.prevChannel() },
+                onNext = { viewModel.nextChannel() },
+                onOpenPlaylist = { viewModel.toggleSidebar(open = true) },
+                isLocked = isScreenLocked,
+                onToggleLock = { isScreenLocked = !isScreenLocked },
+                shuffleEnabled = uiState.shuffleEnabled,
+                onToggleShuffle = { viewModel.toggleShuffle() }
             )
         }
 
