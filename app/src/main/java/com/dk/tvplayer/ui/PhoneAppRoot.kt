@@ -22,6 +22,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.dk.tvplayer.ui.home.HomeHubScreen
 import com.dk.tvplayer.ui.library.VideoLibraryScreen
 import com.dk.tvplayer.ui.placeholder.PlaceholderScreen
 import com.dk.tvplayer.ui.player.PhonePlayerScreen
@@ -50,11 +51,20 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
         Screen.Settings
     )
 
-    val isPlayerActive = currentRoute?.startsWith("player") == true
+    // Hide the bottom bar on the full-screen player and on the hidden
+    // History/Streams screens reached via Settings, matching the player's own behavior.
+    val hideBottomBar = currentRoute?.startsWith("player") == true ||
+        currentRoute == "history_streams"
+
+    fun navigateToPlayer(url: String, title: String) {
+        val encodedUrl = URLEncoder.encode(url, StandardCharsets.UTF_8.toString())
+        val encodedTitle = URLEncoder.encode(title, StandardCharsets.UTF_8.toString())
+        navController.navigate("player/$encodedUrl/$encodedTitle")
+    }
 
     Scaffold(
         bottomBar = {
-            if (!isPlayerActive) {
+            if (!hideBottomBar) {
                 NavigationBar {
                     navItems.forEach { screen ->
                         NavigationBarItem(
@@ -84,11 +94,7 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
             composable(Screen.Library.route) {
                 VideoLibraryScreen(
                     viewModel = viewModel,
-                    onPlayVideo = { url, title ->
-                        val encodedUrl = URLEncoder.encode(url, StandardCharsets.UTF_8.toString())
-                        val encodedTitle = URLEncoder.encode(title, StandardCharsets.UTF_8.toString())
-                        navController.navigate("player/$encodedUrl/$encodedTitle")
-                    }
+                    onPlayVideo = { url, title -> navigateToPlayer(url, title) }
                 )
             }
 
@@ -101,7 +107,19 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
             }
 
             composable(Screen.Settings.route) {
-                SettingsScreen()
+                SettingsScreen(
+                    onOpenHistoryAndStreams = { navController.navigate("history_streams") }
+                )
+            }
+
+            // Hidden screen — not in the bottom nav, reached only via Settings.
+            // Holds the old Home tab's content: Recently Watched + custom Streams.
+            composable("history_streams") {
+                HomeHubScreen(
+                    viewModel = viewModel,
+                    onPlayMedia = { url, title -> navigateToPlayer(url, title) },
+                    onBack = { navController.popBackStack() }
+                )
             }
 
             composable(
