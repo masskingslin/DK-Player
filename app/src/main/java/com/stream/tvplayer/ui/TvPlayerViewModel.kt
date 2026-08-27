@@ -11,10 +11,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class TvPlayerViewModel(application: Application) : AndroidViewModel(application) {
+
+    companion object {
+        // Default public IPTV playlist used to seed the channel list on first run,
+        // or any time the local database has no channels yet.
+        private const val DEFAULT_M3U_URL = "https://iptv-org.github.io/iptv/index.m3u"
+    }
 
     private val repository = TvRepository(TvDatabase.getInstance(application).tvDao())
     private val _uiState = MutableStateFlow(TvUiState())
@@ -29,6 +36,31 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
                 if (list.isNotEmpty() && _uiState.value.currentChannel == null) {
                     selectChannel(0)
                 }
+            }
+        }
+
+        // Seed with the default public playlist if the local database is empty
+        // (fresh install, or the user cleared their channel list).
+        viewModelScope.launch {
+            val existing = repository.getChannelsStream().first()
+            if (existing.isEmpty()) {
+                loadDefaultPlaylist()
+            }
+        }
+    }
+
+    /**
+     * Loads the default public IPTV playlist. Safe to call again later as a
+     * "Restore default channels" action if desired.
+     */
+    fun loadDefaultPlaylist() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(isLoading = true) }
+            try {
+                repository.syncPlaylist(DEFAULT_M3U_URL)
+                _uiState.update { it.copy(isLoading = false) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isLoading = false, errorMessage = e.localizedMessage) }
             }
         }
     }
