@@ -1,11 +1,71 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">DK Player</string>
-    <string name="app_banner_desc">DK Player for Android TV and Fire TV</string>
+    <!-- Application Identifiers -->
+    <string name="app_name">DK-Player</string>
+    <string name="app_banner_desc">DK-Player for Android TV, Fire TV &amp; Mobile</string>
+
+    <!-- Navigation & Core Tabs -->
+    <string name="nav_home">Home</string>
+    <string name="nav_videos">Videos</string>
+    <string name="nav_audio">Audio</string>
+    <string name="nav_playlists">Playlists</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Home Hub & Custom Streams -->
+    <string name="home_hub_title">DK-Player Hub</string>
+    <string name="recently_watched">Recently Watched</string>
+    <string name="saved_streams">Saved Streams &amp; IPTV</string>
+    <string name="btn_new_stream">New Stream</string>
+    <string name="no_streams_title">No custom streams saved yet.</string>
+    <string name="no_streams_subtitle">Click \'+ New Stream\' to add direct HLS, MP4 or RTMP streams.</string>
+    <string name="dialog_add_stream_title">Add Network Stream</string>
+    <string name="dialog_stream_name_label">Stream / Channel Name</string>
+    <string name="dialog_stream_url_label">Stream URL (HLS / M3U8 / MP4)</string>
+    <string name="dialog_stream_error">Please provide a valid stream link.</string>
+    <string name="stream_default_name">Network Stream</string>
+
+    <!-- Video Library & Media Scanner -->
+    <string name="tab_local_videos">Local Videos</string>
+    <string name="tab_iptv_channels">IPTV Channels</string>
+    <string name="no_local_videos">No local video files found</string>
+    <string name="permission_hint">Ensure video permissions are granted in settings.</string>
+
+    <!-- Player Controls & Accessibility -->
+    <string name="live_stream_label">LIVE</string>
+    <string name="live_broadcast_badge">Live Stream Broadcast</string>
+    <string name="content_desc_back">Back</string>
+    <string name="content_desc_rotate">Rotate Screen</string>
+    <string name="content_desc_rewind">Rewind 10 seconds</string>
+    <string name="content_desc_forward">Fast forward 10 seconds</string>
+    <string name="content_desc_play_pause">Play or Pause</string>
+    <string name="content_desc_delete">Delete stream</string>
+    <string name="aspect_ratio_title">Aspect Ratio</string>
+    <string name="audio_tracks_title">Audio Tracks</string>
+
+    <!-- TV Guide & Leanback UI -->
     <string name="tv_guide_title">TV Guide</string>
     <string name="no_epg_available">No EPG Program Information Available</string>
-    <string name="up_next_prefix">UP NEXT:</string>
-    <string name="live_stream_label">Live Stream Broadcast</string>
+    <string name="up_next_prefix">NEXT:</string>
+    <string name="now_playing_prefix">NOW:</string>
     <string name="loading_channels">Loading playlist and guide data…</string>
     <string name="error_stream_playback">Failed to load stream. Retrying…</string>
+    <string name="search_channel_hint">Search channel…</string>
+
+    <!-- Settings & Player Configurations -->
+    <string name="settings_title">Player Configuration</string>
+    <string name="setting_hw_accel">Hardware Acceleration</string>
+    <string name="setting_hw_accel_desc">Use MediaCodec hardware decoders when available</string>
+    <string name="setting_bg_play">Background Audio Playback</string>
+    <string name="setting_bg_play_desc">Continue playing audio when app is minimized</string>
+    <string name="setting_auto_resume">Auto Resume Playback</string>
+    <string name="setting_auto_resume_desc">Remember and restore playback positions across launches</string>
+
+    <!-- Placeholder Stubs & Actions -->
+    <string name="audio_library_title">Audio Library</string>
+    <string name="audio_library_subtitle">Local audio track scanner coming soon</string>
+    <string name="playlists_title">Playlists</string>
+    <string name="playlists_subtitle">Custom M3U &amp; XSPF list manager</string>
+    <string name="action_add">Add</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_retry">Retry</string>
 </resources>
