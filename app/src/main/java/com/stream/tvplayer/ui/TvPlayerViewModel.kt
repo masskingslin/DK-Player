@@ -87,10 +87,18 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun toggleShuffle() {
+        _uiState.update { it.copy(shuffleEnabled = !it.shuffleEnabled) }
+    }
+
     fun nextChannel() {
         val total = _uiState.value.channels.size
         if (total > 0) {
-            val next = (_uiState.value.currentChannelIndex + 1) % total
+            val next = if (_uiState.value.shuffleEnabled) {
+                randomChannelIndexExcluding(_uiState.value.currentChannelIndex)
+            } else {
+                (_uiState.value.currentChannelIndex + 1) % total
+            }
             selectChannel(next)
         }
     }
@@ -98,11 +106,23 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
     fun prevChannel() {
         val total = _uiState.value.channels.size
         if (total > 0) {
-            val prev = if (_uiState.value.currentChannelIndex > 0) {
+            val prev = if (_uiState.value.shuffleEnabled) {
+                randomChannelIndexExcluding(_uiState.value.currentChannelIndex)
+            } else if (_uiState.value.currentChannelIndex > 0) {
                 _uiState.value.currentChannelIndex - 1
             } else total - 1
             selectChannel(prev)
         }
+    }
+
+    private fun randomChannelIndexExcluding(current: Int): Int {
+        val total = _uiState.value.channels.size
+        if (total <= 1) return current
+        var candidate: Int
+        do {
+            candidate = (0 until total).random()
+        } while (candidate == current)
+        return candidate
     }
 
     private fun refreshScheduleForCurrent() {
