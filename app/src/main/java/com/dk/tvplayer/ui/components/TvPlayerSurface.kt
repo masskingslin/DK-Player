@@ -1,17 +1,16 @@
+@file:OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package com.dk.tvplayer.ui.components
 
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import androidx.annotation.OptIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 
-@OptIn(UnstableApi::class)
 @Composable
 fun TvPlayerSurface(
     exoPlayer: ExoPlayer,
