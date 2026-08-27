@@ -3,61 +3,45 @@ package com.stream.tvplayer.ui.components
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.annotation.OptIn
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import com.stream.tvplayer.player.TvExoPlayerManager
 
 @OptIn(UnstableApi::class)
 @Composable
 fun TvPlayerSurface(
-    streamUrl: String?,
-    licenseServerUrl: String?,
-    modifier: Modifier = Modifier,
-    onPlayerReady: (Player) -> Unit = {},
-    onPlayerViewReady: (PlayerView) -> Unit = {}
+    player: ExoPlayer?,
+    modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val playerManager = remember { TvExoPlayerManager(context) }
-
-    // Hand the underlying player up to the caller once, so a control bar
-    // elsewhere in the tree can drive play/pause without owning the player.
-    LaunchedEffect(Unit) {
-        onPlayerReady(playerManager.player)
-    }
-
-    LaunchedEffect(streamUrl, licenseServerUrl) {
-        if (!streamUrl.isNullOrBlank()) {
-            playerManager.playChannel(streamUrl, licenseServerUrl)
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        if (player != null) {
+            AndroidView(
+                factory = { context ->
+                    PlayerView(context).apply {
+                        this.player = player
+                        useController = false
+                        layoutParams = FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    }
+                },
+                update = { view ->
+                    view.player = player
+                },
+                modifier = Modifier.fillMaxSize()
+            )
         }
     }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            playerManager.release()
-        }
-    }
-
-    AndroidView(
-        modifier = modifier,
-        factory = { ctx ->
-            PlayerView(ctx).apply {
-                player = playerManager.player
-                useController = false
-                keepScreenOn = true
-                layoutParams = FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-                onPlayerViewReady(this)
-            }
-        }
-    )
 }
