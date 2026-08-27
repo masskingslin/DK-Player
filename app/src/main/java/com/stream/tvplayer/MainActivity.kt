@@ -1,4 +1,4 @@
-package com.stream.tvplayer
+package com.dk.tvplayer
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
