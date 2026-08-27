@@ -3,7 +3,6 @@ package com.dk.tvplayer.ui
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Settings
@@ -23,7 +22,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.dk.tvplayer.ui.home.HomeHubScreen
 import com.dk.tvplayer.ui.library.VideoLibraryScreen
 import com.dk.tvplayer.ui.placeholder.PlaceholderScreen
 import com.dk.tvplayer.ui.player.PhonePlayerScreen
@@ -33,7 +31,6 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
 sealed class Screen(val route: String, val label: String, val icon: ImageVector) {
-    data object Home : Screen("home", "Home", Icons.Default.Home)
     data object Library : Screen("library", "Videos", Icons.Default.Folder)
     data object Audio : Screen("audio", "Audio", Icons.Default.MusicNote)
     data object Playlists : Screen("playlists", "Playlists", Icons.Default.PlaylistPlay)
@@ -47,7 +44,6 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
     val currentRoute = navBackStackEntry?.destination?.route
 
     val navItems = listOf(
-        Screen.Home,
         Screen.Library,
         Screen.Audio,
         Screen.Playlists,
@@ -82,20 +78,9 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = Screen.Home.route,
+            startDestination = Screen.Library.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable(Screen.Home.route) {
-                HomeHubScreen(
-                    viewModel = viewModel,
-                    onPlayMedia = { url, title ->
-                        val encodedUrl = URLEncoder.encode(url, StandardCharsets.UTF_8.toString())
-                        val encodedTitle = URLEncoder.encode(title, StandardCharsets.UTF_8.toString())
-                        navController.navigate("player/$encodedUrl/$encodedTitle")
-                    }
-                )
-            }
-
             composable(Screen.Library.route) {
                 VideoLibraryScreen(
                     viewModel = viewModel,
