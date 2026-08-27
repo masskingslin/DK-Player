@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.stream.tvplayer.data.local.ChannelEntity
+import com.stream.tvplayer.data.local.HistoryEntity
 import com.stream.tvplayer.data.local.TvDatabase
 import com.stream.tvplayer.data.repository.TvRepository
 import kotlinx.coroutines.Dispatchers
@@ -19,12 +20,11 @@ import kotlinx.coroutines.launch
 class TvPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
-        // Default public IPTV playlist used to seed the channel list on first run,
-        // or any time the local database has no channels yet.
         private const val DEFAULT_M3U_URL = "https://iptv-org.github.io/iptv/index.m3u"
     }
 
-    private val repository = TvRepository(TvDatabase.getInstance(application).tvDao())
+    private val db = TvDatabase.getInstance(application)
+    private val repository = TvRepository(db.tvDao(), db.historyDao(), db.streamDao())
     private val _uiState = MutableStateFlow(TvUiState())
     val uiState: StateFlow<TvUiState> = _uiState.asStateFlow()
 
@@ -40,20 +40,26 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
             }
         }
 
-        // Seed with the default public playlist if the local database is empty
-        // (fresh install, or the user cleared their channel list).
         viewModelScope.launch {
             val existing = repository.getChannelsStream().first()
             if (existing.isEmpty()) {
                 loadDefaultPlaylist()
             }
         }
+
+        viewModelScope.launch {
+            repository.getHistoryStream().collect { list ->
+                _uiState.update { it.copy(history = list) }
+            }
+        }
+
+        viewModelScope.launch {
+            repository.getStreamsFlow().collect { list ->
+                _uiState.update { it.copy(streams = list) }
+            }
+        }
     }
 
-    /**
-     * Loads the default public IPTV playlist. Safe to call again later as a
-     * "Restore default channels" action if desired.
-     */
     fun loadDefaultPlaylist() {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(isLoading = true) }
@@ -88,11 +94,6 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    /**
-     * Select a channel by object reference. Needed because the sidebar now shows a
-     * filtered/reordered list (search + category + favorites) whose on-screen position
-     * no longer matches the channel's index in the full [TvUiState.channels] list.
-     */
     fun selectChannel(channel: ChannelEntity) {
         val index = _uiState.value.channels.indexOf(channel)
         if (index >= 0) selectChannel(index)
@@ -163,7 +164,7 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // --- Search / category / favorites --------------------------------------
+    // --- Search / category / favorites ---
 
     fun updateSearchQuery(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
@@ -183,5 +184,29 @@ class TvPlayerViewModel(application: Application) : AndroidViewModel(application
             if (!updated.add(channelId)) updated.remove(channelId)
             state.copy(favoriteChannelIds = updated)
         }
+    }
+
+    // --- History ---
+
+    fun recordHistory(entry: HistoryEntity) {
+        viewModelScope.launch { repository.saveHistoryEntry(entry) }
+    }
+
+    fun deleteHistoryEntry(id: Long) {
+        viewModelScope.launch { repository.deleteHistoryEntry(id) }
+    }
+
+    fun clearHistory() {
+        viewModelScope.launch { repository.clearHistory() }
+    }
+
+    // --- Streams ---
+
+    fun addStream(name: String, url: String) {
+        viewModelScope.launch { repository.addStream(name, url) }
+    }
+
+    fun deleteStream(id: Long) {
+        viewModelScope.launch { repository.deleteStream(id) }
     }
 }
