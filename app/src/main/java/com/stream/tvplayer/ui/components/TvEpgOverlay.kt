@@ -1,41 +1,38 @@
 package com.stream.tvplayer.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.stream.tvplayer.data.local.ChannelEntity
-import com.stream.tvplayer.data.local.EpgEntity
+import com.stream.tvplayer.data.local.TvChannelEntity
+import com.stream.tvplayer.data.local.TvEpgProgramEntity
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 @Composable
 fun TvEpgOverlay(
-    channel: ChannelEntity?,
-    currentProgram: EpgEntity?,
-    nextProgram: EpgEntity?,
+    channel: TvChannelEntity?,
+    programs: List<TvEpgProgramEntity>,
     modifier: Modifier = Modifier
 ) {
     if (channel == null) return
 
-    val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
-    val now = System.currentTimeMillis()
-
-    val progress = if (currentProgram != null && currentProgram.endEpochMs > currentProgram.startEpochMs) {
-        ((now - currentProgram.startEpochMs).toFloat() / (currentProgram.endEpochMs - currentProgram.startEpochMs).toFloat())
-            .coerceIn(0f, 1f)
-    } else 0f
+    val currentProgram = programs.firstOrNull()
+    val nextProgram = if (programs.size > 1) programs[1] else null
 
     Box(
         modifier = modifier
@@ -45,82 +42,53 @@ fun TvEpgOverlay(
                     colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
                 )
             )
-            .padding(horizontal = 32.dp, vertical = 24.dp)
+            .padding(24.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = "${channel.channelNumber}",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-
-                Column {
-                    Text(
-                        text = channel.name,
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    channel.groupName?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color.LightGray
-                        )
-                    }
-                }
-            }
-
-            if (currentProgram != null) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "NOW: ${currentProgram.title}",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color.White,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "${timeFormat.format(Date(currentProgram.startEpochMs))} - ${timeFormat.format(Date(currentProgram.endEpochMs))}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.LightGray
-                    )
-                }
-
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp)),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = Color.DarkGray
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = channel.name,
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "[${channel.groupTitle}]",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
 
-            if (nextProgram != null) {
+            Spacer(modifier = Modifier.height(6.dp))
+
+            currentProgram?.let { prog ->
                 Text(
-                    text = "NEXT: ${nextProgram.title} (${timeFormat.format(Date(nextProgram.startEpochMs))})",
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = "NOW: ${prog.title} (${formatEpgTime(prog.startTime)} - ${formatEpgTime(prog.endTime)})",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color.White
+                )
+                prog.description?.let { desc ->
+                    Text(
+                        text = desc,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.LightGray
+                    )
+                }
+            }
+
+            nextProgram?.let { next ->
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "NEXT: ${next.title} (${formatEpgTime(next.startTime)})",
+                    style = MaterialTheme.typography.bodySmall,
                     color = Color.Gray
                 )
             }
         }
     }
+}
+
+private fun formatEpgTime(timeMs: Long): String {
+    val formatter = SimpleDateFormat("HH:mm", Locale.getDefault())
+    return formatter.format(Date(timeMs))
 }
