@@ -1,23 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Brand / Primary Colors -->
+    <!-- Brand / Primary Accent Colors -->
     <color name="tv_primary">#FFD54F</color>
     <color name="tv_primary_variant">#FFC107</color>
     <color name="tv_primary_dark">#0F172A</color>
+    <color name="tv_highlight_yellow">#FFD54F</color>
+    <color name="accent_blue">#2196F3</color>
+    <color name="accent_red">#EF4444</color>
 
-    <!-- TV Backgrounds & Surfaces -->
+    <!-- TV & Mobile Surfaces (Dark Theme) -->
     <color name="tv_background">#050505</color>
     <color name="tv_surface_dark">#121212</color>
     <color name="tv_surface_drawer">#F2101010</color>
     <color name="tv_overlay_gradient_end">#F7050505</color>
+    <color name="surface_card">#1E1E1E</color>
 
-    <!-- Typography & Accents -->
+    <!-- Base / Transparency Palette -->
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="transparent">#00000000</color>
+    <color name="black_overlay">#80000000</color>
+    <color name="black_overlay_light">#4D000000</color>
+
+    <!-- Typography & Iconography -->
     <color name="tv_text_primary">#FFFFFF</color>
     <color name="tv_text_secondary">#B0B0B0</color>
     <color name="tv_text_muted">#808080</color>
-    <color name="tv_highlight_yellow">#FFD54F</color>
 
-    <!-- Remote Focus Highlights -->
+    <!-- Remote Focus & Selection Highlights -->
     <color name="tv_focus_container">#33FFD54F</color>
     <color name="tv_selected_item">#22FFFFFF</color>
 </resources>
