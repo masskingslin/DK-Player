@@ -26,13 +26,17 @@ object M3uParser {
 
                 val titleIndex = line.lastIndexOf(',')
                 val displayTitle = if (titleIndex != -1) line.substring(titleIndex + 1).trim() else "Channel"
-                if (tempName.isNullOrEmpty()) tempName = displayTitle
+                if (tempName.isNullOrEmpty()) {
+                    tempName = displayTitle
+                }
             } else if (!line.startsWith("#") && line.isNotEmpty()) {
-                if (!tempName.isNullOrEmpty()) {
+                val resolvedName = tempName
+                if (!resolvedName.isNullOrEmpty()) {
+                    val resolvedId = tempId ?: resolvedName.lowercase().replace(" ", "_")
                     channels.add(
                         TvChannelEntity(
-                            channelId = tempId ?: tempName.lowercase().replace(" ", "_"),
-                            name = tempName,
+                            channelId = resolvedId,
+                            name = resolvedName,
                             logoUrl = tempLogo,
                             groupTitle = tempGroup ?: "General",
                             streamUrl = line
