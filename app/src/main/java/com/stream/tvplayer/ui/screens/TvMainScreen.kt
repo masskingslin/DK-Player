@@ -6,6 +6,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -15,8 +17,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.tv.material3.*
 import com.stream.tvplayer.ui.TvPlayerViewModel
 import com.stream.tvplayer.ui.components.TvEpgOverlay
@@ -122,32 +122,37 @@ fun TvMainScreen(viewModel: TvPlayerViewModel) {
                         modifier = Modifier.padding(bottom = 12.dp)
                     )
 
-                    TvLazyColumn(
-                        LazyColumn(
-    verticalArrangement = Arrangement.spacedBy(6.dp),
-    modifier = Modifier.fillMaxSize()
-) {
-    itemsIndexed(uiState.channels) { index, channel ->
-        val isSelected = index == uiState.currentChannelIndex
-        DenseListItem(
-            selected = isSelected,
-            onClick = {
-                viewModel.selectChannel(index)
-                viewModel.toggleSidebar(open = false)
-            },
-            headlineContent = {
-                Text(
-                    text = "${channel.channelNumber}. ${channel.name}",
-                    color = if (isSelected) Color(0xFFFFD54F) else Color.White
-                )
-            },
-            supportingContent = channel.groupName?.let {
-                { Text(text = it, color = Color.Gray, fontSize = 12.sp) }
-            },
-            colors = ListItemDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                selectedContainerColor = Color(0x22FFFFFF)
-            )
-        )
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        itemsIndexed(uiState.channels) { index, channel ->
+                            val isSelected = index == uiState.currentChannelIndex
+
+                            DenseListItem(
+                                selected = isSelected,
+                                onClick = {
+                                    viewModel.selectChannel(index)
+                                    viewModel.toggleSidebar(open = false)
+                                },
+                                headlineContent = {
+                                    Text(
+                                        text = "${channel.channelNumber}. ${channel.name}",
+                                        color = if (isSelected) Color(0xFFFFD54F) else Color.White
+                                    )
+                                },
+                                supportingContent = channel.groupName?.let {
+                                    { Text(text = it, color = Color.Gray, fontSize = 12.sp) }
+                                },
+                                colors = ListItemDefaults.colors(
+                                    focusedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedContainerColor = Color(0x22FFFFFF)
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
