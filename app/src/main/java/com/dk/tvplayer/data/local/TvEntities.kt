@@ -1,46 +1,46 @@
 package com.dk.tvplayer.data.local
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "channels")
-data class TvChannelEntity(
+@Entity(
+    tableName = "channels",
+    indices = [
+        Index(value = ["url"], unique = true),
+        Index(value = ["groupTitle"]),
+        Index(value = ["isFavorite"])
+    ]
+)
+data class ChannelEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val channelId: String,
     val name: String,
+    val url: String,
     val logoUrl: String? = null,
     val groupTitle: String = "General",
-    val streamUrl: String,
-    val isFavorite: Boolean = false
+    val epgChannelId: String? = null,
+    val isFavorite: Boolean = false,
+    val lastPlayedTimestamp: Long = 0L,
+    val orderIndex: Int = 0,
+    val playlistId: Long? = null
+)
+
+@Entity(tableName = "playlists")
+data class PlaylistEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val urlOrPath: String,
+    val isLocalFile: Boolean,
+    val channelCount: Int = 0,
+    val lastUpdated: Long = System.currentTimeMillis()
 )
 
 @Entity(tableName = "epg_programs")
-data class TvEpgProgramEntity(
+data class EpgProgramEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val channelId: String,
     val title: String,
     val description: String? = null,
     val startTime: Long,
     val endTime: Long
-)
-
-@Entity(tableName = "playback_history")
-data class HistoryEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val mediaUrl: String,
-    val title: String,
-    val lastPositionMs: Long,
-    val durationMs: Long,
-    val lastWatchedTimestamp: Long = System.currentTimeMillis(),
-    val isLiveStream: Boolean = false
-)
-
-@Entity(tableName = "custom_streams")
-data class StreamEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val name: String,
-    val streamUrl: String,
-    val groupTitle: String = "Custom Streams",
-    val logoUrl: String? = null,
-    val addedDate: Long = System.currentTimeMillis()
 )
