@@ -64,4 +64,31 @@ interface TvDao {
 
     @Query("DELETE FROM channels WHERE playlistId = :playlistId")
     suspend fun deleteChannelsForPlaylist(playlistId: Long)
+
+    // EPG programs
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertEpgPrograms(programs: List<EpgProgramEntity>)
+
+    @Query("SELECT * FROM epg_programs WHERE channelId = :channelId ORDER BY startTime ASC")
+    fun getEpgForChannel(channelId: String): Flow<List<EpgProgramEntity>>
+
+    @Query("DELETE FROM epg_programs")
+    suspend fun clearEpgPrograms()
+
+    // History
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertHistory(history: HistoryEntity)
+
+    @Query("SELECT * FROM history ORDER BY playedAt DESC LIMIT 20")
+    fun getHistory(): Flow<List<HistoryEntity>>
+
+    // Custom streams
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCustomStream(stream: StreamEntity)
+
+    @Delete
+    suspend fun deleteCustomStream(stream: StreamEntity)
+
+    @Query("SELECT * FROM custom_streams ORDER BY addedAt DESC")
+    fun getCustomStreams(): Flow<List<StreamEntity>>
 }

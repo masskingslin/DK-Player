@@ -44,3 +44,22 @@ data class EpgProgramEntity(
     val startTime: Long,
     val endTime: Long
 )
+
+@Entity(tableName = "history")
+data class HistoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val mediaUrl: String,
+    val playedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "custom_streams",
+    indices = [Index(value = ["streamUrl"], unique = true)]
+)
+data class StreamEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val streamUrl: String,
+    val addedAt: Long = System.currentTimeMillis()
+)
