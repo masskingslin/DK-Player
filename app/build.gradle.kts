@@ -1,8 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
-
-implementation("androidx.media3:media3-common:$media3Version")
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
 }
@@ -76,4 +74,7 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+implementation("androidx.media3:media3-common:$media3Version")
+
 }
