@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Card
@@ -42,7 +43,8 @@ import com.dk.tvplayer.ui.theme.ThemeMode
 @Composable
 fun SettingsScreen(
     viewModel: TvPlayerViewModel,
-    uiState: TvUiState
+    uiState: TvUiState,
+    onOpenHistoryAndStreams: () -> Unit
 ) {
     val context = LocalContext.current
     var showSleepDialog by remember { mutableStateOf(false) }
@@ -104,6 +106,26 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
         Text("Utilities & Timer", style = MaterialTheme.typography.titleLarge)
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onOpenHistoryAndStreams)
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.History, contentDescription = null)
+                Spacer(Modifier.width(16.dp))
+                Column {
+                    Text("History & Custom Streams", style = MaterialTheme.typography.titleMedium)
+                    Text("Recently watched items and saved direct stream links", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(12.dp))
 
         Card(
