@@ -41,8 +41,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.dk.tvplayer.data.local.ChannelEntity
 import com.dk.tvplayer.data.local.LocalVideoItem
-import com.dk.tvplayer.data.local.TvChannelEntity
 import com.dk.tvplayer.ui.TvPlayerViewModel
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -175,11 +175,11 @@ fun VideoLibraryScreen(
                         items(state.filteredChannels) { channel ->
                             IptvChannelCard(
                                 channel = channel,
-                                isFavorite = state.favoriteChannelIds.contains(channel.channelId),
-                                onToggleFavorite = { viewModel.toggleFavorite(channel.channelId) },
+                                isFavorite = channel.isFavorite,
+                                onToggleFavorite = { viewModel.toggleFavorite(channel) },
                                 onClick = {
                                     viewModel.selectChannel(channel)
-                                    onPlayVideo(channel.streamUrl, channel.name)
+                                    onPlayVideo(channel.url, channel.name)
                                 }
                             )
                         }
@@ -224,7 +224,7 @@ fun LocalVideoCard(video: LocalVideoItem, onClick: () -> Unit) {
 
 @Composable
 fun IptvChannelCard(
-    channel: TvChannelEntity,
+    channel: ChannelEntity,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
     onClick: () -> Unit
