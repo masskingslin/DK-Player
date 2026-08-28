@@ -31,6 +31,29 @@ class TvRepository(
 
     fun getAllPlaylists(): Flow<List<PlaylistEntity>> = tvDao.getAllPlaylists()
 
+    fun getEpgForChannel(channelId: String?): Flow<List<com.dk.tvplayer.data.local.EpgProgramEntity>> =
+        if (channelId.isNullOrEmpty()) {
+            kotlinx.coroutines.flow.flowOf(emptyList())
+        } else {
+            tvDao.getEpgForChannel(channelId)
+        }
+
+    fun getHistory(): Flow<List<com.dk.tvplayer.data.local.HistoryEntity>> = tvDao.getHistory()
+
+    suspend fun recordHistory(title: String, mediaUrl: String) = withContext(Dispatchers.IO) {
+        tvDao.insertHistory(com.dk.tvplayer.data.local.HistoryEntity(title = title, mediaUrl = mediaUrl))
+    }
+
+    fun getCustomStreams(): Flow<List<com.dk.tvplayer.data.local.StreamEntity>> = tvDao.getCustomStreams()
+
+    suspend fun addCustomStream(name: String, url: String) = withContext(Dispatchers.IO) {
+        tvDao.insertCustomStream(com.dk.tvplayer.data.local.StreamEntity(name = name, streamUrl = url))
+    }
+
+    suspend fun deleteCustomStream(stream: com.dk.tvplayer.data.local.StreamEntity) = withContext(Dispatchers.IO) {
+        tvDao.deleteCustomStream(stream)
+    }
+
     suspend fun toggleFavorite(channel: ChannelEntity) = withContext(Dispatchers.IO) {
         tvDao.updateChannel(channel.copy(isFavorite = !channel.isFavorite))
     }
