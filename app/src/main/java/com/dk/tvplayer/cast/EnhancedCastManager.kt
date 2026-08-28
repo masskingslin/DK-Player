@@ -1,13 +1,13 @@
 package com.dk.tvplayer.cast
 
-import androidx.media3.common.C
-import androidx.media3.session.MediaSession
-import com.google.android.gms.cast.CastDevice
+import android.content.Context
+import androidx.mediarouter.media.MediaControlIntent
+import androidx.mediarouter.media.MediaRouteSelector
+import androidx.mediarouter.media.MediaRouter
 import com.google.android.gms.cast.CastMediaControlIntent
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.SessionManagerListener
-import com.google.android.gms.cast.framework.discovery.DiscoveryManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -28,23 +28,47 @@ data class CastState(
     val connectionError: String? = null
 )
 
-class EnhancedCastManager(private val castContext: CastContext) : SessionManagerListener<CastSession> {
-    
+/**
+ * Manages Cast device discovery and playback using the public MediaRouter + Cast
+ * Framework APIs. Device discovery is handled via [MediaRouter] (the internal
+ * `DiscoveryManager` class used previously is not part of the public Cast SDK).
+ */
+class EnhancedCastManager(
+    private val context: Context,
+    private val castContext: CastContext
+) : SessionManagerListener<CastSession> {
+
     private val _castState = MutableStateFlow(CastState())
     val castState: StateFlow<CastState> = _castState
 
     private val sessionManager = castContext.sessionManager
-    private val discoveryManager = DiscoveryManager.getInstance()
+    private val mediaRouter = MediaRouter.getInstance(context)
+    private val routeSelector = MediaRouteSelector.Builder()
+        .addControlCategory(CastMediaControlIntent.categoryForCast(CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID))
+        .addControlCategory(MediaControlIntent.CATEGORY_LIVE_VIDEO)
+        .build()
+
+    private val routerCallback = object : MediaRouter.Callback() {
+        override fun onRouteAdded(router: MediaRouter, route: MediaRouter.RouteInfo) = refreshDeviceList()
+        override fun onRouteRemoved(router: MediaRouter, route: MediaRouter.RouteInfo) = refreshDeviceList()
+        override fun onRouteChanged(router: MediaRouter, route: MediaRouter.RouteInfo) = refreshDeviceList()
+        override fun onRouteSelected(router: MediaRouter, route: MediaRouter.RouteInfo, reason: Int) = refreshDeviceList()
+        override fun onRouteUnselected(router: MediaRouter, route: MediaRouter.RouteInfo, reason: Int) = refreshDeviceList()
+    }
 
     init {
-        sessionManager.addSessionManagerListener(this)
-        startDeviceDiscovery()
+        sessionManager.addSessionManagerListener(this, CastSession::class.java)
     }
 
     fun startDeviceDiscovery() {
         try {
-            _castState.value = _castState.value.copy(isDiscovering = true)
-            discoveryManager.startDiscoveryManager()
+            _castState.value = _castState.value.copy(isDiscovering = true, connectionError = null)
+            mediaRouter.addCallback(
+                routeSelector,
+                routerCallback,
+                MediaRouter.CALLBACK_FLAG_REQUEST_DISCOVERY
+            )
+            refreshDeviceList()
         } catch (e: Exception) {
             _castState.value = _castState.value.copy(
                 isDiscovering = false,
@@ -55,7 +79,7 @@ class EnhancedCastManager(private val castContext: CastContext) : SessionManager
 
     fun stopDeviceDiscovery() {
         try {
-            discoveryManager.stopDiscoveryManager()
+            mediaRouter.removeCallback(routerCallback)
             _castState.value = _castState.value.copy(isDiscovering = false)
         } catch (e: Exception) {
             _castState.value = _castState.value.copy(
@@ -66,9 +90,9 @@ class EnhancedCastManager(private val castContext: CastContext) : SessionManager
 
     fun connectToDevice(deviceId: String) {
         try {
-            val device = discoveryManager.deviceList.find { it.deviceId == deviceId }
-            if (device != null) {
-                sessionManager.selectCastDevice(device)
+            val route = mediaRouter.routes.find { it.id == deviceId }
+            if (route != null) {
+                mediaRouter.selectRoute(route)
             }
         } catch (e: Exception) {
             _castState.value = _castState.value.copy(
@@ -149,18 +173,20 @@ class EnhancedCastManager(private val castContext: CastContext) : SessionManager
 
     fun refreshDeviceList() {
         try {
-            val devices = discoveryManager.deviceList
-            val deviceInfoList = devices.map { device ->
-                CastDeviceInfo(
-                    id = device.deviceId,
-                    name = device.friendlyName,
-                    modelName = device.modelName,
-                    ipAddress = device.ipAddress.hostAddress ?: "Unknown",
-                    isConnected = sessionManager.currentCastSession?.castDevice?.deviceId == device.deviceId,
-                    volumeLevel = (sessionManager.currentCastSession?.remoteMediaClient?.streamVolume?.toInt() ?: 0) * 15,
-                    isMuted = sessionManager.currentCastSession?.remoteMediaClient?.isMediaLoaded ?: false
-                )
-            }
+            val selectedRouteId = mediaRouter.selectedRoute.id
+            val deviceInfoList = mediaRouter.routes
+                .filter { it.matchesSelector(routeSelector) && !it.isDefault }
+                .map { route ->
+                    CastDeviceInfo(
+                        id = route.id,
+                        name = route.name,
+                        modelName = route.description ?: "",
+                        ipAddress = "",
+                        isConnected = route.id == selectedRouteId,
+                        volumeLevel = route.volume,
+                        isMuted = false
+                    )
+                }
             _castState.value = _castState.value.copy(availableDevices = deviceInfoList)
         } catch (e: Exception) {
             _castState.value = _castState.value.copy(
@@ -172,15 +198,17 @@ class EnhancedCastManager(private val castContext: CastContext) : SessionManager
     override fun onSessionStarted(session: CastSession, sessionId: String) {
         val device = session.castDevice
         _castState.value = _castState.value.copy(
-            connectedDevice = CastDeviceInfo(
-                id = device.deviceId,
-                name = device.friendlyName,
-                modelName = device.modelName,
-                ipAddress = device.ipAddress.hostAddress ?: "Unknown",
-                isConnected = true,
-                volumeLevel = 50,
-                isMuted = false
-            ),
+            connectedDevice = device?.let {
+                CastDeviceInfo(
+                    id = it.deviceId,
+                    name = it.friendlyName,
+                    modelName = it.modelName ?: "",
+                    ipAddress = it.ipAddress?.hostAddress ?: "Unknown",
+                    isConnected = true,
+                    volumeLevel = 50,
+                    isMuted = false
+                )
+            },
             connectionError = null
         )
     }
@@ -197,8 +225,16 @@ class EnhancedCastManager(private val castContext: CastContext) : SessionManager
         // Handle session resuming
     }
 
-    override fun onSessionResume(session: CastSession, wasSuspended: Boolean) {
+    override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) {
         // Handle session resume
+    }
+
+    override fun onSessionStarting(session: CastSession) {
+        // Handle session starting
+    }
+
+    override fun onSessionEnding(session: CastSession) {
+        // Handle session ending
     }
 
     override fun onSessionStartFailed(session: CastSession, error: Int) {
@@ -207,10 +243,16 @@ class EnhancedCastManager(private val castContext: CastContext) : SessionManager
         )
     }
 
+    override fun onSessionResumeFailed(session: CastSession, error: Int) {
+        _castState.value = _castState.value.copy(
+            connectionError = "Failed to resume session: Error code $error"
+        )
+    }
+
     fun release() {
         try {
-            sessionManager.removeSessionManagerListener(this)
-            discoveryManager.stopDiscoveryManager()
+            sessionManager.removeSessionManagerListener(this, CastSession::class.java)
+            mediaRouter.removeCallback(routerCallback)
         } catch (e: Exception) {
             e.printStackTrace()
         }
