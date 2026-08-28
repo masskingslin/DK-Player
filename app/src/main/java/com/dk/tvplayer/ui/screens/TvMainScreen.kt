@@ -26,7 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.dk.tvplayer.data.local.TvChannelEntity
+import com.dk.tvplayer.data.local.ChannelEntity
 import com.dk.tvplayer.ui.TvPlayerViewModel
 import com.dk.tvplayer.ui.components.TvEpgOverlay
 import com.dk.tvplayer.ui.components.TvPlayerControls
@@ -147,7 +147,7 @@ fun TvMainScreen(viewModel: TvPlayerViewModel) {
 
 @Composable
 fun TvChannelRow(
-    channel: TvChannelEntity,
+    channel: ChannelEntity,
     isSelected: Boolean,
     onSelect: () -> Unit
 ) {
