@@ -23,6 +23,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.dk.tvplayer.ui.home.HomeHubScreen
+import com.dk.tvplayer.ui.library.AudioLibraryScreen
 import com.dk.tvplayer.ui.library.VideoLibraryScreen
 import com.dk.tvplayer.ui.placeholder.PlaceholderScreen
 import com.dk.tvplayer.ui.player.PhonePlayerScreen
@@ -99,7 +100,10 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
             }
 
             composable(Screen.Audio.route) {
-                PlaceholderScreen(title = "Audio Library", subtitle = "Local audio track scanner coming soon")
+                AudioLibraryScreen(
+                    viewModel = viewModel,
+                    onPlayAudio = { filePath, title -> navigateToPlayer(filePath, title) }
+                )
             }
 
             composable(Screen.Playlists.route) {

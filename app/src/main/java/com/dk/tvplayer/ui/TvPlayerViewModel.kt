@@ -161,6 +161,13 @@ class TvPlayerViewModel(
         }
     }
 
+    fun refreshLocalAudio() {
+        viewModelScope.launch {
+            val audio = repository.scanLocalAudio()
+            _uiState.update { it.copy(localAudio = audio) }
+        }
+    }
+
     fun importM3u(inputStream: InputStream) {
         viewModelScope.launch {
             repository.loadM3u(inputStream)

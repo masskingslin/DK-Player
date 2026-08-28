@@ -1,6 +1,7 @@
 package com.dk.tvplayer.ui
 
 import com.dk.tvplayer.data.local.HistoryEntity
+import com.dk.tvplayer.data.local.LocalAudioItem
 import com.dk.tvplayer.data.local.LocalVideoItem
 import com.dk.tvplayer.data.local.StreamEntity
 import com.dk.tvplayer.data.local.TvChannelEntity
@@ -16,6 +17,7 @@ data class TvUiState(
     val history: List<HistoryEntity> = emptyList(),
     val customStreams: List<StreamEntity> = emptyList(),
     val localVideos: List<LocalVideoItem> = emptyList(),
+    val localAudio: List<LocalAudioItem> = emptyList(),
     val searchQuery: String = "",
     val isOverlayVisible: Boolean = true,
     val favoriteChannelIds: Set<String> = emptySet(),
