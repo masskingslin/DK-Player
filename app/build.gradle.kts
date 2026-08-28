@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+
+implementation("androidx.media3:media3-common:$media3Version")
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
 }
