@@ -33,11 +33,17 @@ class TvExoPlayerManager(
 ) {
     val player: ExoPlayer
 
+    /** Alias for [player], kept for call sites that expect an `exoPlayer` property. */
+    val exoPlayer: ExoPlayer get() = player
+
     private val _subtitleTracks = MutableStateFlow<List<SubtitleTrackInfo>>(emptyList())
     val subtitleTracks = _subtitleTracks.asStateFlow()
 
     private val _playerError = MutableStateFlow<String?>(null)
     val playerError = _playerError.asStateFlow()
+
+    private val _isPlaying = MutableStateFlow(false)
+    val isPlayingFlow = _isPlaying.asStateFlow()
 
     private var retryCount = 0
     private val maxRetries = 4
@@ -71,6 +77,10 @@ class TvExoPlayerManager(
                     _playerError.value = null
                 }
             }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                _isPlaying.value = isPlaying
+            }
         })
     }
 
@@ -97,6 +107,10 @@ class TvExoPlayerManager(
 
     fun setPlaybackSpeed(speed: Float) {
         player.playbackParameters = PlaybackParameters(speed, 1.0f)
+    }
+
+    fun togglePlayPause() {
+        if (player.isPlaying) player.pause() else player.play()
     }
 
     private fun updateSubtitleTracks() {
