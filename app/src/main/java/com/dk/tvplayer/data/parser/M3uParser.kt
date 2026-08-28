@@ -1,21 +1,26 @@
 package com.dk.tvplayer.data.parser
 
-import com.dk.tvplayer.data.local.TvChannelEntity
-import java.io.InputStream
 import java.util.regex.Pattern
 
+data class ParsedM3uChannel(
+    val name: String,
+    val url: String,
+    val logoUrl: String? = null,
+    val groupTitle: String? = null,
+    val tvgId: String? = null
+)
+
 object M3uParser {
-    fun parse(inputStream: InputStream): List<TvChannelEntity> {
-        val channels = mutableListOf<TvChannelEntity>()
-        val reader = inputStream.bufferedReader()
-        var currentLine: String?
+    fun parse(content: String): List<ParsedM3uChannel> {
+        val channels = mutableListOf<ParsedM3uChannel>()
+        val lines = content.lineSequence()
         var tempId: String? = null
         var tempName: String? = null
         var tempLogo: String? = null
         var tempGroup: String? = null
 
-        while (reader.readLine().also { currentLine = it } != null) {
-            val line = currentLine!!.trim()
+        for (rawLine in lines) {
+            val line = rawLine.trim()
             if (line.isEmpty()) continue
 
             if (line.startsWith("#EXTINF:")) {
@@ -32,14 +37,13 @@ object M3uParser {
             } else if (!line.startsWith("#") && line.isNotEmpty()) {
                 val resolvedName = tempName
                 if (!resolvedName.isNullOrEmpty()) {
-                    val resolvedId = tempId ?: resolvedName.lowercase().replace(" ", "_")
                     channels.add(
-                        TvChannelEntity(
-                            channelId = resolvedId,
+                        ParsedM3uChannel(
                             name = resolvedName,
+                            url = line,
                             logoUrl = tempLogo,
-                            groupTitle = tempGroup ?: "General",
-                            streamUrl = line
+                            groupTitle = tempGroup,
+                            tvgId = tempId
                         )
                     )
                 }
