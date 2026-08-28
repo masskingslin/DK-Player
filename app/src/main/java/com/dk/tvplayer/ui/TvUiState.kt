@@ -1,25 +1,30 @@
 package com.dk.tvplayer.ui
 
-import com.dk.tvplayer.data.local.HistoryEntity
-import com.dk.tvplayer.data.local.LocalAudioItem
-import com.dk.tvplayer.data.local.LocalVideoItem
-import com.dk.tvplayer.data.local.StreamEntity
-import com.dk.tvplayer.data.local.TvChannelEntity
-import com.dk.tvplayer.data.local.TvEpgProgramEntity
+import com.dk.tvplayer.data.local.ChannelEntity
+import com.dk.tvplayer.data.local.PlaylistEntity
+import com.dk.tvplayer.player.SubtitleTrackInfo
+import com.dk.tvplayer.ui.components.SortOption
+import com.dk.tvplayer.ui.theme.ThemeMode
 
 data class TvUiState(
-    val channels: List<TvChannelEntity> = emptyList(),
-    val filteredChannels: List<TvChannelEntity> = emptyList(),
+    val channels: List<ChannelEntity> = emptyList(),
+    val playlists: List<PlaylistEntity> = emptyList(),
     val categories: List<String> = emptyList(),
-    val selectedCategory: String = "All",
-    val selectedChannel: TvChannelEntity? = null,
-    val currentEpgPrograms: List<TvEpgProgramEntity> = emptyList(),
-    val history: List<HistoryEntity> = emptyList(),
-    val customStreams: List<StreamEntity> = emptyList(),
-    val localVideos: List<LocalVideoItem> = emptyList(),
-    val localAudio: List<LocalAudioItem> = emptyList(),
+    val selectedCategory: String? = null,
     val searchQuery: String = "",
-    val isOverlayVisible: Boolean = true,
-    val favoriteChannelIds: Set<String> = emptySet(),
-    val showFavoritesOnly: Boolean = false
-)
+    val showFavoritesOnly: Boolean = false,
+    val selectedSort: SortOption = SortOption.DEFAULT,
+    val currentlyPlayingChannel: ChannelEntity? = null,
+    val isPlaying: Boolean = false,
+    val isInPipMode: Boolean = false,
+    val playbackSpeed: Float = 1.0f,
+    val remainingSleepSeconds: Long? = null,
+    val playerError: String? = null,
+    val subtitleTracks: List<SubtitleTrackInfo> = emptyList(),
+    val selectedChannelIds: Set<Long> = emptySet(),
+    val themeMode: ThemeMode = ThemeMode.DARK,
+    val isCasting: Boolean = false
+) {
+    val isMultiSelectActive: Boolean
+        get() = selectedChannelIds.isNotEmpty()
+}
