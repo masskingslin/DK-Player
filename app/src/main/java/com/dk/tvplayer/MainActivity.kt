@@ -15,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import com.dk.tvplayer.ui.PhoneAppRoot
 import com.dk.tvplayer.ui.TvPlayerViewModel
+import com.dk.tvplayer.ui.screens.TvMainScreen
 import com.dk.tvplayer.ui.theme.DkPlayerTheme
 
 class MainActivity : ComponentActivity() {
@@ -24,16 +25,22 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val isTv = DeviceType.isTelevision(this)
+
         setContent {
             val uiState by viewModel.uiState.collectAsState()
 
             DkPlayerTheme(themeMode = uiState.themeMode) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    PhoneAppRoot(
-                        viewModel = viewModel,
-                        uiState = uiState,
-                        onEnterPip = { enterPictureInPicture() }
-                    )
+                    if (isTv) {
+                        TvMainScreen(viewModel = viewModel)
+                    } else {
+                        PhoneAppRoot(
+                            viewModel = viewModel,
+                            uiState = uiState,
+                            onEnterPip = { enterPictureInPicture() }
+                        )
+                    }
                 }
             }
         }
