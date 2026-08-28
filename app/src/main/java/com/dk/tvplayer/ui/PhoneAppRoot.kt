@@ -12,6 +12,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -24,8 +25,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.dk.tvplayer.ui.home.HomeHubScreen
 import com.dk.tvplayer.ui.library.AudioLibraryScreen
+import com.dk.tvplayer.ui.library.PlaylistManagementScreen
 import com.dk.tvplayer.ui.library.VideoLibraryScreen
-import com.dk.tvplayer.ui.placeholder.PlaceholderScreen
 import com.dk.tvplayer.ui.player.PhonePlayerScreen
 import com.dk.tvplayer.ui.settings.SettingsScreen
 import java.net.URLDecoder
@@ -40,7 +41,11 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
 }
 
 @Composable
-fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
+fun PhoneAppRoot(
+    viewModel: TvPlayerViewModel,
+    uiState: TvUiState,
+    onEnterPip: () -> Unit
+) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -107,11 +112,19 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
             }
 
             composable(Screen.Playlists.route) {
-                PlaceholderScreen(title = "Playlists", subtitle = "Custom M3U & XSPF list manager")
+                PlaylistManagementScreen(
+                    playlists = uiState.playlists,
+                    onAddPlaylist = { title, urlOrPath, isLocal -> viewModel.addPlaylist(title, urlOrPath, isLocal) },
+                    onDeletePlaylist = { viewModel.deletePlaylist(it) },
+                    onSyncPlaylist = { viewModel.syncPlaylist(it) },
+                    onSelectPlaylist = { }
+                )
             }
 
             composable(Screen.Settings.route) {
                 SettingsScreen(
+                    viewModel = viewModel,
+                    uiState = uiState,
                     onOpenHistoryAndStreams = { navController.navigate("history_streams") }
                 )
             }
@@ -138,11 +151,16 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
                 val mediaUrl = URLDecoder.decode(rawUrl, StandardCharsets.UTF_8.toString())
                 val title = URLDecoder.decode(rawTitle, StandardCharsets.UTF_8.toString())
 
+                LaunchedEffect(mediaUrl) {
+                    viewModel.playerManager.playStream(mediaUrl)
+                    viewModel.recordHistory(title, mediaUrl)
+                }
+
                 PhonePlayerScreen(
-                    mediaUrl = mediaUrl,
-                    title = title,
                     viewModel = viewModel,
-                    onBack = { navController.popBackStack() }
+                    uiState = uiState,
+                    onBack = { navController.popBackStack() },
+                    onEnterPip = onEnterPip
                 )
             }
         }
