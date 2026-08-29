@@ -1,164 +1,90 @@
 package com.dk.tvplayer.util
 
 import android.content.Context
-import android.graphics.Color
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.*
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
+import java.io.IOException
 
-val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "app_settings")
-
-@Serializable
-data class ThemeConfig(
-    val primaryColor: String = "#FF6200EE",
-    val secondaryColor: String = "#FF03DAC6",
-    val tertiaryColor: String = "#FF018786",
-    val backgroundColor: String = "#FF121212",
-    val surfaceColor: String = "#FF1F1F1F",
-    val errorColor: String = "#FFCF6679",
-    val isDarkMode: Boolean = true
-)
-
-@Serializable
-data class PlaybackSettings(
-    val defaultPlaybackSpeed: Float = 1.0f,
-    val autoResume: Boolean = true,
-    val rememberPlaybackPosition: Boolean = true,
-    val defaultSubtitleLanguage: String? = null,
-    val alwaysShowControls: Boolean = false,
-    val controlsAutoHideDelay: Long = 3000
-)
-
-@Serializable
-data class UISettings(
-    val fontSize: Float = 1.0f,
-    val channelGridColumns: Int = 3,
-    val showThumbnails: Boolean = true,
-    val animationsEnabled: Boolean = true,
-    val themeConfig: ThemeConfig = ThemeConfig()
-)
-
-@Serializable
-data class AppSettings(
-    val playbackSettings: PlaybackSettings = PlaybackSettings(),
-    val uiSettings: UISettings = UISettings(),
-    val versionCode: Int = 1
-)
+val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "dk_player_settings")
 
 class SettingsManager(private val context: Context) {
-    private val dataStore = context.settingsDataStore
 
-    suspend fun saveThemeConfig(theme: ThemeConfig) {
-        dataStore.edit { preferences ->
-            preferences[stringPreferencesKey("theme_config")] = Json.encodeToString(ThemeConfig.serializer(), theme)
-        }
+    companion object {
+        val HARDWARE_ACCELERATION = booleanPreferencesKey("hardware_acceleration")
+        val BACKGROUND_AUDIO = booleanPreferencesKey("background_audio")
+        val AUTO_RESUME = booleanPreferencesKey("auto_resume")
+        val THEME_MODE = stringPreferencesKey("theme_mode")
+        val ACCENT_COLOR = stringPreferencesKey("accent_color")
+        val SUBTITLE_FONT_SIZE = floatPreferencesKey("subtitle_font_size")
+        val SUBTITLE_BACKGROUND_OPACITY = floatPreferencesKey("subtitle_bg_opacity")
+        val PLAYBACK_SPEED = floatPreferencesKey("playback_speed")
+        val SLEEP_TIMER_MINUTES = intPreferencesKey("sleep_timer_minutes")
+        val BUFFER_FOR_PLAYBACK_MS = intPreferencesKey("buffer_playback_ms")
     }
 
-    fun getThemeConfig(): Flow<ThemeConfig> = dataStore.data.map { preferences ->
-        val json = preferences[stringPreferencesKey("theme_config")] ?: return@map ThemeConfig()
-        try {
-            Json.decodeFromString(ThemeConfig.serializer(), json)
-        } catch (e: Exception) {
-            ThemeConfig()
-        }
+    val hardwareAccelerationFlow: Flow<Boolean> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { preferences -> preferences[HARDWARE_ACCELERATION] ?: true }
+
+    val backgroundAudioFlow: Flow<Boolean> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { preferences -> preferences[BACKGROUND_AUDIO] ?: false }
+
+    val autoResumeFlow: Flow<Boolean> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { preferences -> preferences[AUTO_RESUME] ?: true }
+
+    val themeModeFlow: Flow<String> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { preferences -> preferences[THEME_MODE] ?: "SYSTEM" }
+
+    val accentColorFlow: Flow<String> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { preferences -> preferences[ACCENT_COLOR] ?: "PURPLE" }
+
+    val subtitleFontSizeFlow: Flow<Float> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { preferences -> preferences[SUBTITLE_FONT_SIZE] ?: 1.0f }
+
+    val playbackSpeedFlow: Flow<Float> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { preferences -> preferences[PLAYBACK_SPEED] ?: 1.0f }
+
+    suspend fun setHardwareAcceleration(enabled: Boolean) {
+        context.dataStore.edit { it[HARDWARE_ACCELERATION] = enabled }
     }
 
-    suspend fun savePlaybackSettings(settings: PlaybackSettings) {
-        dataStore.edit { preferences ->
-            preferences[stringPreferencesKey("playback_settings")] = Json.encodeToString(PlaybackSettings.serializer(), settings)
-        }
+    suspend fun setBackgroundAudio(enabled: Boolean) {
+        context.dataStore.edit { it[BACKGROUND_AUDIO] = enabled }
     }
 
-    fun getPlaybackSettings(): Flow<PlaybackSettings> = dataStore.data.map { preferences ->
-        val json = preferences[stringPreferencesKey("playback_settings")] ?: return@map PlaybackSettings()
-        try {
-            Json.decodeFromString(PlaybackSettings.serializer(), json)
-        } catch (e: Exception) {
-            PlaybackSettings()
-        }
+    suspend fun setAutoResume(enabled: Boolean) {
+        context.dataStore.edit { it[AUTO_RESUME] = enabled }
     }
 
-    suspend fun saveUISettings(settings: UISettings) {
-        dataStore.edit { preferences ->
-            preferences[stringPreferencesKey("ui_settings")] = Json.encodeToString(UISettings.serializer(), settings)
-        }
+    suspend fun setThemeMode(mode: String) {
+        context.dataStore.edit { it[THEME_MODE] = mode }
     }
 
-    fun getUISettings(): Flow<UISettings> = dataStore.data.map { preferences ->
-        val json = preferences[stringPreferencesKey("ui_settings")] ?: return@map UISettings()
-        try {
-            Json.decodeFromString(UISettings.serializer(), json)
-        } catch (e: Exception) {
-            UISettings()
-        }
+    suspend fun setAccentColor(color: String) {
+        context.dataStore.edit { it[ACCENT_COLOR] = color }
     }
 
-    fun getAppSettings(): Flow<AppSettings> = dataStore.data.map { preferences ->
-        val playbackSettingsJson = preferences[stringPreferencesKey("playback_settings")] ?: ""
-        val uiSettingsJson = preferences[stringPreferencesKey("ui_settings")] ?: ""
-        
-        val playbackSettings = if (playbackSettingsJson.isNotEmpty()) {
-            try {
-                Json.decodeFromString(PlaybackSettings.serializer(), playbackSettingsJson)
-            } catch (e: Exception) {
-                PlaybackSettings()
-            }
-        } else PlaybackSettings()
-
-        val uiSettings = if (uiSettingsJson.isNotEmpty()) {
-            try {
-                Json.decodeFromString(UISettings.serializer(), uiSettingsJson)
-            } catch (e: Exception) {
-                UISettings()
-            }
-        } else UISettings()
-
-        AppSettings(
-            playbackSettings = playbackSettings,
-            uiSettings = uiSettings
-        )
-    }
-
-    suspend fun resetToDefaults() {
-        dataStore.edit { preferences ->
-            preferences.clear()
-            preferences[stringPreferencesKey("theme_config")] = Json.encodeToString(ThemeConfig.serializer(), ThemeConfig())
-            preferences[stringPreferencesKey("playback_settings")] = Json.encodeToString(PlaybackSettings.serializer(), PlaybackSettings())
-            preferences[stringPreferencesKey("ui_settings")] = Json.encodeToString(UISettings.serializer(), UISettings())
-        }
+    suspend fun setSubtitleFontSize(size: Float) {
+        context.dataStore.edit { it[SUBTITLE_FONT_SIZE] = size }
     }
 
     suspend fun setPlaybackSpeed(speed: Float) {
-        dataStore.edit { preferences ->
-            preferences[floatPreferencesKey("playback_speed")] = speed
-        }
-    }
-
-    fun getPlaybackSpeed(): Flow<Float> = dataStore.data.map { preferences ->
-        preferences[floatPreferencesKey("playback_speed")] ?: 1.0f
-    }
-
-    suspend fun setGridColumns(columns: Int) {
-        dataStore.edit { preferences ->
-            preferences[intPreferencesKey("grid_columns")] = columns
-        }
-    }
-
-    fun getGridColumns(): Flow<Int> = dataStore.data.map { preferences ->
-        preferences[intPreferencesKey("grid_columns")] ?: 3
-    }
-
-    suspend fun toggleAnimations(enabled: Boolean) {
-        dataStore.edit { preferences ->
-            preferences[booleanPreferencesKey("animations_enabled")] = enabled
-        }
-    }
-
-    fun getAnimationsEnabled(): Flow<Boolean> = dataStore.data.map { preferences ->
-        preferences[booleanPreferencesKey("animations_enabled")] ?: true
+        context.dataStore.edit { it[PLAYBACK_SPEED] = speed }
     }
 }
