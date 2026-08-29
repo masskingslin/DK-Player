@@ -12,7 +12,6 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -23,60 +22,42 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.dk.tvplayer.ui.home.HomeHubScreen
 import com.dk.tvplayer.ui.library.AudioLibraryScreen
 import com.dk.tvplayer.ui.library.PlaylistManagementScreen
 import com.dk.tvplayer.ui.library.VideoLibraryScreen
 import com.dk.tvplayer.ui.player.PhonePlayerScreen
 import com.dk.tvplayer.ui.settings.SettingsScreen
-import java.net.URLDecoder
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 
-sealed class Screen(val route: String, val label: String, val icon: ImageVector) {
-    data object Library : Screen("library", "Videos", Icons.Default.Folder)
-    data object Audio : Screen("audio", "Audio", Icons.Default.MusicNote)
-    data object Playlists : Screen("playlists", "Playlists", Icons.Default.PlaylistPlay)
-    data object Settings : Screen("settings", "Settings", Icons.Default.Settings)
+sealed class PhoneScreen(val route: String, val title: String, val icon: ImageVector) {
+    data object Videos : PhoneScreen("videos", "Videos", Icons.Default.Folder)
+    data object Audio : PhoneScreen("audio", "Audio", Icons.Default.MusicNote)
+    data object Playlists : PhoneScreen("playlists", "Playlists", Icons.Default.PlaylistPlay)
+    data object Settings : PhoneScreen("settings", "Settings", Icons.Default.Settings)
 }
 
 @Composable
-fun PhoneAppRoot(
-    viewModel: TvPlayerViewModel,
-    uiState: TvUiState,
-    onEnterPip: () -> Unit
-) {
+fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route
+    val currentDestination = navBackStackEntry?.destination
 
-    val navItems = listOf(
-        Screen.Library,
-        Screen.Audio,
-        Screen.Playlists,
-        Screen.Settings
+    val items = listOf(
+        PhoneScreen.Videos,
+        PhoneScreen.Audio,
+        PhoneScreen.Playlists,
+        PhoneScreen.Settings
     )
-
-    // Hide the bottom bar on the full-screen player and on the hidden
-    // History/Streams screens reached via Settings, matching the player's own behavior.
-    val hideBottomBar = currentRoute?.startsWith("player") == true ||
-        currentRoute == "history_streams"
-
-    fun navigateToPlayer(url: String, title: String) {
-        val encodedUrl = URLEncoder.encode(url, StandardCharsets.UTF_8.toString())
-        val encodedTitle = URLEncoder.encode(title, StandardCharsets.UTF_8.toString())
-        navController.navigate("player/$encodedUrl/$encodedTitle")
-    }
 
     Scaffold(
         bottomBar = {
-            if (!hideBottomBar) {
+            val currentRoute = currentDestination?.route
+            if (currentRoute == null || !currentRoute.startsWith("player/")) {
                 NavigationBar {
-                    navItems.forEach { screen ->
+                    items.forEach { screen ->
                         NavigationBarItem(
-                            icon = { Icon(screen.icon, contentDescription = screen.label) },
-                            label = { Text(screen.label) },
-                            selected = currentRoute == screen.route,
+                            icon = { Icon(screen.icon, contentDescription = screen.title) },
+                            label = { Text(screen.title) },
+                            selected = currentDestination?.route == screen.route,
                             onClick = {
                                 navController.navigate(screen.route) {
                                     popUpTo(navController.graph.findStartDestination().id) {
@@ -94,73 +75,50 @@ fun PhoneAppRoot(
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = Screen.Library.route,
+            startDestination = PhoneScreen.Videos.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable(Screen.Library.route) {
+            composable(PhoneScreen.Videos.route) {
                 VideoLibraryScreen(
                     viewModel = viewModel,
-                    onPlayVideo = { url, title -> navigateToPlayer(url, title) }
+                    onPlayVideo = { videoId ->
+                        navController.navigate("player/$videoId/video")
+                    }
                 )
             }
-
-            composable(Screen.Audio.route) {
+            composable(PhoneScreen.Audio.route) {
                 AudioLibraryScreen(
                     viewModel = viewModel,
-                    onPlayAudio = { filePath, title -> navigateToPlayer(filePath, title) }
+                    onPlayAudio = { audioId ->
+                        navController.navigate("player/$audioId/audio")
+                    }
                 )
             }
-
-            composable(Screen.Playlists.route) {
+            composable(PhoneScreen.Playlists.route) {
                 PlaylistManagementScreen(
-                    playlists = uiState.playlists,
-                    onAddPlaylist = { title, urlOrPath, isLocal -> viewModel.addPlaylist(title, urlOrPath, isLocal) },
-                    onDeletePlaylist = { viewModel.deletePlaylist(it) },
-                    onSyncPlaylist = { viewModel.syncPlaylist(it) },
-                    onSelectPlaylist = { }
-                )
-            }
-
-            composable(Screen.Settings.route) {
-                SettingsScreen(
                     viewModel = viewModel,
-                    uiState = uiState,
-                    onOpenHistoryAndStreams = { navController.navigate("history_streams") }
+                    onPlayChannel = { channelId ->
+                        navController.navigate("player/$channelId/channel")
+                    }
                 )
             }
-
-            // Hidden screen — not in the bottom nav, reached only via Settings.
-            // Holds the old Home tab's content: Recently Watched + custom Streams.
-            composable("history_streams") {
-                HomeHubScreen(
-                    viewModel = viewModel,
-                    onPlayMedia = { url, title -> navigateToPlayer(url, title) },
-                    onBack = { navController.popBackStack() }
-                )
+            composable(PhoneScreen.Settings.route) {
+                SettingsScreen(viewModel = viewModel)
             }
-
             composable(
-                route = "player/{mediaUrl}/{title}",
+                route = "player/{mediaId}/{mediaType}",
                 arguments = listOf(
-                    navArgument("mediaUrl") { type = NavType.StringType },
-                    navArgument("title") { type = NavType.StringType }
+                    navArgument("mediaId") { type = NavType.StringType },
+                    navArgument("mediaType") { type = NavType.StringType }
                 )
             ) { backStackEntry ->
-                val rawUrl = backStackEntry.arguments?.getString("mediaUrl").orEmpty()
-                val rawTitle = backStackEntry.arguments?.getString("title").orEmpty()
-                val mediaUrl = URLDecoder.decode(rawUrl, StandardCharsets.UTF_8.toString())
-                val title = URLDecoder.decode(rawTitle, StandardCharsets.UTF_8.toString())
-
-                LaunchedEffect(mediaUrl) {
-                    viewModel.playerManager.playStream(mediaUrl)
-                    viewModel.recordHistory(title, mediaUrl)
-                }
-
+                val mediaId = backStackEntry.arguments?.getString("mediaId") ?: ""
+                val mediaType = backStackEntry.arguments?.getString("mediaType") ?: "video"
                 PhonePlayerScreen(
+                    mediaId = mediaId,
+                    mediaType = mediaType,
                     viewModel = viewModel,
-                    uiState = uiState,
-                    onBack = { navController.popBackStack() },
-                    onEnterPip = onEnterPip
+                    onBackPressed = { navController.popBackStack() }
                 )
             }
         }
