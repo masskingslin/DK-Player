@@ -2,7 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.0.0" // Required for BackupModels & Settings
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -26,7 +26,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Signs release build with debug key for direct testing on device
+            // Signs the release APK with the debug keystore for easy testing
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -39,10 +39,13 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    buildFeatures {
+        compose = true
+    }
 }
 
 dependencies {
-    // AndroidX & Compose
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -57,14 +60,15 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.common)
-    implementation("androidx.media3:media3-cast:1.4.1")
-    implementation("com.google.android.gms:play-services-cast-framework:21.5.0")
+    implementation(libs.androidx.media3.cast)
+    implementation(libs.play.services.cast.framework)
 
-    // Kotlinx Serialization & Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    // Kotlinx Serialization
+    implementation(libs.kotlinx.serialization.json)
 
     // Room Database
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+
+    debugImplementation(libs.androidx.ui.tooling)
 }
