@@ -26,7 +26,6 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Signs the release APK with the debug keystore for easy testing
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -55,6 +54,12 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
+
+    // Navigation Compose
+    implementation(libs.androidx.navigation.compose)
+
+    // Jetpack DataStore Preferences
+    implementation(libs.androidx.datastore.preferences)
 
     // Media3 (ExoPlayer & Cast)
     implementation(libs.androidx.media3.exoplayer)
