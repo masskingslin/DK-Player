@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,6 +44,7 @@ import com.dk.tvplayer.data.local.StreamEntity
 import com.dk.tvplayer.ui.TvPlayerViewModel
 import com.dk.tvplayer.ui.TvUiState
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryAndStreamsScreen(
     viewModel: TvPlayerViewModel,
