@@ -17,16 +17,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.dk.tvplayer.data.local.ChannelEntity
-import com.dk.tvplayer.data.local.EpgProgramEntity
+import com.dk.tvplayer.data.local.TvChannelEntity
+import com.dk.tvplayer.data.local.TvEpgProgramEntity
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 @Composable
 fun TvEpgOverlay(
-    channel: ChannelEntity?,
-    programs: List<EpgProgramEntity>,
+    channel: TvChannelEntity?,
+    programs: List<TvEpgProgramEntity>,
     modifier: Modifier = Modifier
 ) {
     if (channel == null) return
