@@ -1,7 +1,7 @@
 package com.dk.tvplayer.data.parser
 
 import android.util.Xml
-import com.dk.tvplayer.data.local.EpgProgramEntity
+import com.dk.tvplayer.data.local.TvEpgProgramEntity
 import org.xmlpull.v1.XmlPullParser
 import java.io.InputStream
 import java.text.SimpleDateFormat
@@ -13,8 +13,8 @@ object XmlTvParser {
         timeZone = TimeZone.getTimeZone("UTC")
     }
 
-    fun parse(inputStream: InputStream): List<EpgProgramEntity> {
-        val programs = mutableListOf<EpgProgramEntity>()
+    fun parse(inputStream: InputStream): List<TvEpgProgramEntity> {
+        val programs = mutableListOf<TvEpgProgramEntity>()
         val parser = Xml.newPullParser()
         parser.setInput(inputStream, null)
 
@@ -47,7 +47,7 @@ object XmlTvParser {
                         val progTitle = title
                         if (chId != null && progTitle != null) {
                             programs.add(
-                                EpgProgramEntity(
+                                TvEpgProgramEntity(
                                     channelId = chId,
                                     title = progTitle,
                                     description = description,
