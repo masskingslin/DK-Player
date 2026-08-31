@@ -1,157 +1,180 @@
 package com.dk.tvplayer.data.repository
 
-import android.content.Context
-import android.net.Uri
-import com.dk.tvplayer.data.local.ChannelEntity
+import com.dk.tvplayer.data.local.HistoryDao
+import com.dk.tvplayer.data.local.HistoryEntity
+import com.dk.tvplayer.data.local.LocalAudioItem
+import com.dk.tvplayer.data.local.LocalAudioScanner
+import com.dk.tvplayer.data.local.LocalVideoItem
+import com.dk.tvplayer.data.local.LocalVideoScanner
+import com.dk.tvplayer.data.local.PlaylistDao
 import com.dk.tvplayer.data.local.PlaylistEntity
-import com.dk.tvplayer.data.local.TvDao
-import com.dk.tvplayer.data.model.AppBackupData
-import com.dk.tvplayer.data.model.PlaylistBackupDto
-import com.dk.tvplayer.data.model.StreamBackupDto
+import com.dk.tvplayer.data.local.PlaylistItemEntity
+import com.dk.tvplayer.data.local.StreamDao
+import com.dk.tvplayer.data.local.StreamEntity
+import com.dk.tvplayer.data.local.TvChannelDao
+import com.dk.tvplayer.data.local.TvChannelEntity
+import com.dk.tvplayer.data.local.TvEpgDao
+import com.dk.tvplayer.data.local.TvEpgProgramEntity
+import com.dk.tvplayer.data.parser.M3uEntry
 import com.dk.tvplayer.data.parser.M3uParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import java.io.File
+import java.io.InputStream
 
 class TvRepository(
-    private val context: Context,
-    private val tvDao: TvDao
+    private val channelDao: TvChannelDao,
+    private val epgDao: TvEpgDao,
+    private val historyDao: HistoryDao,
+    private val streamDao: StreamDao,
+    private val playlistDao: PlaylistDao,
+    private val videoScanner: LocalVideoScanner,
+    private val audioScanner: LocalAudioScanner
 ) {
-    fun getFilteredChannels(
-        query: String?,
-        category: String?,
-        onlyFavorites: Boolean,
-        sortBy: String
-    ): Flow<List<ChannelEntity>> = tvDao.getFilteredChannels(query, category, onlyFavorites, sortBy)
+    fun getAllChannels(): Flow<List<TvChannelEntity>> = channelDao.getAllChannels()
+    fun getAllGroups(): Flow<List<String>> = channelDao.getAllGroups()
+    fun getPrograms(channelId: String): Flow<List<TvEpgProgramEntity>> =
+        epgDao.getProgramsForChannel(channelId, System.currentTimeMillis())
 
-    fun getAllCategories(): Flow<List<String>> = tvDao.getAllCategories()
+    fun getHistory(): Flow<List<HistoryEntity>> = historyDao.getRecentHistory()
+    fun getCustomStreams(): Flow<List<StreamEntity>> = streamDao.getAllStreams()
 
-    fun getAllPlaylists(): Flow<List<PlaylistEntity>> = tvDao.getAllPlaylists()
+    suspend fun insertCustomStream(name: String, url: String) = withContext(Dispatchers.IO) {
+        streamDao.insertStream(StreamEntity(name = name, streamUrl = url))
+    }
 
-    fun getEpgForChannel(channelId: String?): Flow<List<com.dk.tvplayer.data.local.EpgProgramEntity>> =
-        if (channelId.isNullOrEmpty()) {
-            kotlinx.coroutines.flow.flowOf(emptyList())
-        } else {
-            tvDao.getEpgForChannel(channelId)
+    suspend fun deleteCustomStream(stream: StreamEntity) = withContext(Dispatchers.IO) {
+        streamDao.deleteStream(stream)
+    }
+
+    suspend fun deleteCustomStreams(streams: List<StreamEntity>) = withContext(Dispatchers.IO) {
+        streamDao.deleteStreams(streams)
+    }
+
+    suspend fun saveHistory(url: String, title: String, position: Long, duration: Long) =
+        withContext(Dispatchers.IO) {
+            historyDao.insertOrUpdate(
+                HistoryEntity(
+                    mediaUrl = url,
+                    title = title,
+                    lastPositionMs = position,
+                    durationMs = duration
+                )
+            )
         }
 
-    fun getHistory(): Flow<List<com.dk.tvplayer.data.local.HistoryEntity>> = tvDao.getHistory()
-
-    suspend fun recordHistory(title: String, mediaUrl: String) = withContext(Dispatchers.IO) {
-        tvDao.insertHistory(com.dk.tvplayer.data.local.HistoryEntity(title = title, mediaUrl = mediaUrl))
+    suspend fun loadM3u(inputStream: InputStream) = withContext(Dispatchers.IO) {
+        val parsed = M3uParser.parse(inputStream)
+        channelDao.clearChannels()
+        channelDao.insertChannels(parsed)
     }
 
-    fun getCustomStreams(): Flow<List<com.dk.tvplayer.data.local.StreamEntity>> = tvDao.getCustomStreams()
-
-    suspend fun addCustomStream(name: String, url: String) = withContext(Dispatchers.IO) {
-        tvDao.insertCustomStream(com.dk.tvplayer.data.local.StreamEntity(name = name, streamUrl = url))
+    suspend fun scanLocalVideos(): List<LocalVideoItem> = withContext(Dispatchers.IO) {
+        videoScanner.scanDeviceVideos()
     }
 
-    suspend fun deleteCustomStream(stream: com.dk.tvplayer.data.local.StreamEntity) = withContext(Dispatchers.IO) {
-        tvDao.deleteCustomStream(stream)
+    suspend fun scanLocalAudio(): List<LocalAudioItem> = withContext(Dispatchers.IO) {
+        audioScanner.scanDeviceAudio()
     }
 
-    suspend fun toggleFavorite(channel: ChannelEntity) = withContext(Dispatchers.IO) {
-        tvDao.updateChannel(channel.copy(isFavorite = !channel.isFavorite))
+    // ---- Playlist management (Playlists tab) ----
+
+    fun getAllPlaylists(): Flow<List<PlaylistEntity>> = playlistDao.getAllPlaylists()
+
+    fun getPlaylistItems(playlistId: Long): Flow<List<PlaylistItemEntity>> =
+        playlistDao.getItemsForPlaylist(playlistId)
+
+    fun getPlaylistItemCount(playlistId: Long): Flow<Int> = playlistDao.getItemCount(playlistId)
+
+    suspend fun createPlaylist(name: String): Long = withContext(Dispatchers.IO) {
+        playlistDao.insertPlaylist(PlaylistEntity(name = name))
     }
 
-    suspend fun recordChannelPlayed(channel: ChannelEntity) = withContext(Dispatchers.IO) {
-        tvDao.updateChannel(channel.copy(lastPlayedTimestamp = System.currentTimeMillis()))
-    }
-
-    suspend fun batchDeleteChannels(channelIds: List<Long>) = withContext(Dispatchers.IO) {
-        tvDao.deleteChannelsByIds(channelIds)
-    }
-
-    suspend fun batchMoveChannels(channelIds: List<Long>, targetCategory: String) = withContext(Dispatchers.IO) {
-        tvDao.moveChannelsToGroup(channelIds, targetCategory)
-    }
-
-    suspend fun addPlaylist(title: String, pathOrUrl: String, isLocal: Boolean) = withContext(Dispatchers.IO) {
-        val playlistId = tvDao.insertPlaylist(
-            PlaylistEntity(
-                title = title,
-                urlOrPath = pathOrUrl,
-                isLocalFile = isLocal,
-                lastUpdated = System.currentTimeMillis()
-            )
-        )
-        syncPlaylist(playlistId, pathOrUrl, isLocal)
+    suspend fun renamePlaylist(playlist: PlaylistEntity, newName: String) = withContext(Dispatchers.IO) {
+        playlistDao.updatePlaylist(playlist.copy(name = newName))
     }
 
     suspend fun deletePlaylist(playlist: PlaylistEntity) = withContext(Dispatchers.IO) {
-        tvDao.deleteChannelsForPlaylist(playlist.id)
-        tvDao.deletePlaylist(playlist)
+        playlistDao.clearPlaylist(playlist.id)
+        playlistDao.deletePlaylist(playlist)
     }
 
-    suspend fun syncPlaylist(playlistId: Long, pathOrUrl: String, isLocal: Boolean) = withContext(Dispatchers.IO) {
-        try {
-            val content = if (isLocal) {
-                File(pathOrUrl).readText()
-            } else {
-                java.net.URL(pathOrUrl).readText()
-            }
-            val parsedChannels = M3uParser.parse(content)
-            val entities = parsedChannels.mapIndexed { idx, parsed ->
-                ChannelEntity(
-                    name = parsed.name,
-                    url = parsed.url,
-                    logoUrl = parsed.logoUrl,
-                    groupTitle = parsed.groupTitle ?: "General",
-                    epgChannelId = parsed.tvgId,
-                    orderIndex = idx,
-                    playlistId = playlistId
+    suspend fun addItemToPlaylist(playlistId: Long, title: String, url: String, group: String? = null, logo: String? = null) =
+        withContext(Dispatchers.IO) {
+            val existing = playlistDao.getItemsForPlaylistOnce(playlistId)
+            playlistDao.insertItem(
+                PlaylistItemEntity(
+                    playlistId = playlistId,
+                    title = title,
+                    mediaUrl = url,
+                    groupTitle = group,
+                    logoUrl = logo,
+                    position = existing.size
                 )
-            }
-            tvDao.deleteChannelsForPlaylist(playlistId)
-            tvDao.insertChannels(entities)
-        } catch (_: Exception) { }
-    }
-
-    suspend fun exportDataToJson(uri: Uri): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val allChannels = tvDao.getAllChannelsSync().map {
-                StreamBackupDto(it.name, it.url, it.groupTitle, it.logoUrl, it.isFavorite)
-            }
-            val allPlaylists = tvDao.getAllPlaylistsSync().map {
-                PlaylistBackupDto(it.title, it.urlOrPath, it.isLocalFile)
-            }
-            val backup = AppBackupData(
-                customStreams = allChannels,
-                playlists = allPlaylists
             )
-            val jsonText = Json { prettyPrint = true }.encodeToString(backup)
-            context.contentResolver.openOutputStream(uri)?.use { it.write(jsonText.toByteArray()) }
-            true
-        } catch (e: Exception) {
-            false
         }
+
+    suspend fun removeItemFromPlaylist(item: PlaylistItemEntity) = withContext(Dispatchers.IO) {
+        playlistDao.deleteItem(item)
     }
 
-    suspend fun importDataFromJson(uri: Uri): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val jsonText = context.contentResolver.openInputStream(uri)?.use {
-                it.reader().readText()
-            } ?: return@withContext false
+    suspend fun removeItemsFromPlaylist(items: List<PlaylistItemEntity>) = withContext(Dispatchers.IO) {
+        playlistDao.deleteItems(items)
+    }
 
-            val backup = Json.decodeFromString<AppBackupData>(jsonText)
-            val entities = backup.customStreams.mapIndexed { idx, s ->
-                ChannelEntity(
-                    name = s.name,
-                    url = s.url,
-                    groupTitle = s.groupTitle,
-                    logoUrl = s.logoUrl,
-                    isFavorite = s.isFavorite,
-                    orderIndex = idx
-                )
+    /** Moves items (typically a multi-selected batch) into a different playlist. */
+    suspend fun moveItemsToPlaylist(items: List<PlaylistItemEntity>, targetPlaylistId: Long) =
+        withContext(Dispatchers.IO) {
+            val startIndex = playlistDao.getItemsForPlaylistOnce(targetPlaylistId).size
+            val moved = items.mapIndexed { index, item ->
+                item.copy(id = 0, playlistId = targetPlaylistId, position = startIndex + index)
             }
-            tvDao.insertChannels(entities)
-            true
-        } catch (e: Exception) {
-            false
+            playlistDao.deleteItems(items)
+            playlistDao.insertItems(moved)
         }
+
+    /** Persists a full reorder (e.g. after drag / move up-down) in one shot. */
+    suspend fun reorderPlaylistItems(items: List<PlaylistItemEntity>) = withContext(Dispatchers.IO) {
+        val reindexed = items.mapIndexed { index, item -> item.copy(position = index) }
+        playlistDao.updateItems(reindexed)
+    }
+
+    /** Imports an M3U file directly into a specific user playlist (as opposed to the global channel list). */
+    suspend fun importM3uIntoPlaylist(playlistId: Long, inputStream: InputStream) = withContext(Dispatchers.IO) {
+        val entries: List<M3uEntry> = M3uParser.parseEntries(inputStream)
+        val existingCount = playlistDao.getItemsForPlaylistOnce(playlistId).size
+        val items = entries.mapIndexed { index, entry ->
+            PlaylistItemEntity(
+                playlistId = playlistId,
+                title = entry.name,
+                mediaUrl = entry.streamUrl,
+                logoUrl = entry.logoUrl,
+                groupTitle = entry.groupTitle,
+                position = existingCount + index
+            )
+        }
+        playlistDao.insertItems(items)
+    }
+
+    suspend fun getPlaylistItemsOnce(playlistId: Long): List<PlaylistItemEntity> = withContext(Dispatchers.IO) {
+        playlistDao.getItemsForPlaylistOnce(playlistId)
+    }
+
+    suspend fun getAllPlaylistsOnce(): List<PlaylistEntity> = withContext(Dispatchers.IO) {
+        playlistDao.getAllPlaylistsOnce()
+    }
+
+    suspend fun getAllStreamsOnce(): List<StreamEntity> = withContext(Dispatchers.IO) {
+        streamDao.getAllStreamsOnce()
+    }
+
+    /** Used by settings-import restore: re-creates playlists (with fresh ids) from a backup. */
+    suspend fun restorePlaylist(name: String, items: List<PlaylistItemEntity>) = withContext(Dispatchers.IO) {
+        val newId = playlistDao.insertPlaylist(PlaylistEntity(name = name))
+        playlistDao.insertItems(items.mapIndexed { index, item -> item.copy(id = 0, playlistId = newId, position = index) })
+    }
+
+    suspend fun restoreCustomStream(stream: StreamEntity) = withContext(Dispatchers.IO) {
+        streamDao.insertStream(stream.copy(id = 0))
     }
 }
