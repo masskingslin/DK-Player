@@ -9,86 +9,109 @@ import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
-interface TvDao {
+interface TvChannelDao {
+    @Query("SELECT * FROM channels ORDER BY name ASC")
+    fun getAllChannels(): Flow<List<TvChannelEntity>>
+
+    @Query("SELECT * FROM channels WHERE groupTitle = :group ORDER BY name ASC")
+    fun getChannelsByGroup(group: String): Flow<List<TvChannelEntity>>
+
+    @Query("SELECT DISTINCT groupTitle FROM channels ORDER BY groupTitle ASC")
+    fun getAllGroups(): Flow<List<String>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertChannels(channels: List<ChannelEntity>)
+    suspend fun insertChannels(channels: List<TvChannelEntity>)
 
     @Update
-    suspend fun updateChannel(channel: ChannelEntity)
+    suspend fun updateChannel(channel: TvChannelEntity)
+
+    @Query("DELETE FROM channels")
+    suspend fun clearChannels()
+}
+
+@Dao
+interface TvEpgDao {
+    @Query("SELECT * FROM epg_programs WHERE channelId = :channelId AND endTime >= :currentTime ORDER BY startTime ASC")
+    fun getProgramsForChannel(channelId: String, currentTime: Long): Flow<List<TvEpgProgramEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPrograms(programs: List<TvEpgProgramEntity>)
+
+    @Query("DELETE FROM epg_programs WHERE endTime < :cutoffTime")
+    suspend fun purgeOldPrograms(cutoffTime: Long)
+}
+
+@Dao
+interface HistoryDao {
+    @Query("SELECT * FROM playback_history ORDER BY lastWatchedTimestamp DESC LIMIT 30")
+    fun getRecentHistory(): Flow<List<HistoryEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdate(history: HistoryEntity)
+
+    @Query("DELETE FROM playback_history WHERE mediaUrl = :url")
+    suspend fun deleteByUrl(url: String)
+}
+
+@Dao
+interface StreamDao {
+    @Query("SELECT * FROM custom_streams ORDER BY addedDate DESC")
+    fun getAllStreams(): Flow<List<StreamEntity>>
+
+    @Query("SELECT * FROM custom_streams ORDER BY addedDate DESC")
+    suspend fun getAllStreamsOnce(): List<StreamEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertStream(stream: StreamEntity)
 
     @Delete
-    suspend fun deleteChannel(channel: ChannelEntity)
+    suspend fun deleteStream(stream: StreamEntity)
 
-    @Query("DELETE FROM channels WHERE id IN (:channelIds)")
-    suspend fun deleteChannelsByIds(channelIds: List<Long>)
+    @Delete
+    suspend fun deleteStreams(streams: List<StreamEntity>)
+}
 
-    @Query("UPDATE channels SET groupTitle = :targetGroup WHERE id IN (:channelIds)")
-    suspend fun moveChannelsToGroup(channelIds: List<Long>, targetGroup: String)
+@Dao
+interface PlaylistDao {
+    @Query("SELECT * FROM playlists ORDER BY createdDate DESC")
+    fun getAllPlaylists(): Flow<List<PlaylistEntity>>
 
-    @Query("""
-        SELECT * FROM channels 
-        WHERE (:query IS NULL OR name LIKE '%' || :query || '%' OR groupTitle LIKE '%' || :query || '%')
-        AND (:category IS NULL OR groupTitle = :category)
-        AND (:onlyFavorites = 0 OR isFavorite = 1)
-        ORDER BY 
-            CASE WHEN :sortBy = 'NAME_ASC' THEN name END ASC,
-            CASE WHEN :sortBy = 'NAME_DESC' THEN name END DESC,
-            CASE WHEN :sortBy = 'RECENT' THEN lastPlayedTimestamp END DESC,
-            orderIndex ASC
-    """)
-    fun getFilteredChannels(
-        query: String?,
-        category: String?,
-        onlyFavorites: Boolean,
-        sortBy: String
-    ): Flow<List<ChannelEntity>>
+    @Query("SELECT * FROM playlists ORDER BY createdDate DESC")
+    suspend fun getAllPlaylistsOnce(): List<PlaylistEntity>
 
-    @Query("SELECT DISTINCT groupTitle FROM channels WHERE groupTitle IS NOT NULL AND groupTitle != ''")
-    fun getAllCategories(): Flow<List<String>>
-
-    @Query("SELECT * FROM channels")
-    suspend fun getAllChannelsSync(): List<ChannelEntity>
-
-    // Playlists
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylist(playlist: PlaylistEntity): Long
 
-    @Query("SELECT * FROM playlists ORDER BY lastUpdated DESC")
-    fun getAllPlaylists(): Flow<List<PlaylistEntity>>
-
-    @Query("SELECT * FROM playlists")
-    suspend fun getAllPlaylistsSync(): List<PlaylistEntity>
+    @Update
+    suspend fun updatePlaylist(playlist: PlaylistEntity)
 
     @Delete
     suspend fun deletePlaylist(playlist: PlaylistEntity)
 
-    @Query("DELETE FROM channels WHERE playlistId = :playlistId")
-    suspend fun deleteChannelsForPlaylist(playlistId: Long)
+    @Query("SELECT * FROM playlist_items WHERE playlistId = :playlistId ORDER BY position ASC")
+    fun getItemsForPlaylist(playlistId: Long): Flow<List<PlaylistItemEntity>>
 
-    // EPG programs
+    @Query("SELECT * FROM playlist_items WHERE playlistId = :playlistId ORDER BY position ASC")
+    suspend fun getItemsForPlaylistOnce(playlistId: Long): List<PlaylistItemEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertEpgPrograms(programs: List<EpgProgramEntity>)
+    suspend fun insertItem(item: PlaylistItemEntity): Long
 
-    @Query("SELECT * FROM epg_programs WHERE channelId = :channelId ORDER BY startTime ASC")
-    fun getEpgForChannel(channelId: String): Flow<List<EpgProgramEntity>>
-
-    @Query("DELETE FROM epg_programs")
-    suspend fun clearEpgPrograms()
-
-    // History
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertHistory(history: HistoryEntity)
+    suspend fun insertItems(items: List<PlaylistItemEntity>)
 
-    @Query("SELECT * FROM history ORDER BY playedAt DESC LIMIT 20")
-    fun getHistory(): Flow<List<HistoryEntity>>
-
-    // Custom streams
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertCustomStream(stream: StreamEntity)
+    @Update
+    suspend fun updateItems(items: List<PlaylistItemEntity>)
 
     @Delete
-    suspend fun deleteCustomStream(stream: StreamEntity)
+    suspend fun deleteItem(item: PlaylistItemEntity)
 
-    @Query("SELECT * FROM custom_streams ORDER BY addedAt DESC")
-    fun getCustomStreams(): Flow<List<StreamEntity>>
+    @Delete
+    suspend fun deleteItems(items: List<PlaylistItemEntity>)
+
+    @Query("DELETE FROM playlist_items WHERE playlistId = :playlistId")
+    suspend fun clearPlaylist(playlistId: Long)
+
+    @Query("SELECT COUNT(*) FROM playlist_items WHERE playlistId = :playlistId")
+    fun getItemCount(playlistId: Long): Flow<Int>
 }
