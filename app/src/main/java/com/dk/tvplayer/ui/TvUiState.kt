@@ -1,54 +1,44 @@
 package com.dk.tvplayer.ui
 
-import com.dk.tvplayer.data.local.ChannelEntity
-import com.dk.tvplayer.data.local.EpgProgramEntity
+import com.dk.tvplayer.data.local.AppSettings
 import com.dk.tvplayer.data.local.HistoryEntity
 import com.dk.tvplayer.data.local.LocalAudioItem
 import com.dk.tvplayer.data.local.LocalVideoItem
 import com.dk.tvplayer.data.local.PlaylistEntity
+import com.dk.tvplayer.data.local.PlaylistItemEntity
+import com.dk.tvplayer.data.local.SortOption
 import com.dk.tvplayer.data.local.StreamEntity
-import com.dk.tvplayer.player.SubtitleTrackInfo
-import com.dk.tvplayer.ui.components.SortOption
-import com.dk.tvplayer.ui.theme.ThemeMode
+import com.dk.tvplayer.data.local.TvChannelEntity
+import com.dk.tvplayer.data.local.TvEpgProgramEntity
 
 data class TvUiState(
-    // IPTV channel browsing (search/category filtered, backed by Room)
-    val filteredChannels: List<ChannelEntity> = emptyList(),
-    val playlists: List<PlaylistEntity> = emptyList(),
+    val channels: List<TvChannelEntity> = emptyList(),
+    val filteredChannels: List<TvChannelEntity> = emptyList(),
     val categories: List<String> = emptyList(),
-    val selectedCategory: String? = null,
-    val searchQuery: String = "",
-    val showFavoritesOnly: Boolean = false,
-    val selectedSort: SortOption = SortOption.DEFAULT,
-    val selectedChannel: ChannelEntity? = null,
-
-    // Playback
-    val currentlyPlayingChannel: ChannelEntity? = null,
-    val isPlaying: Boolean = false,
-    val isInPipMode: Boolean = false,
-    val playbackSpeed: Float = 1.0f,
-    val remainingSleepSeconds: Long? = null,
-    val playerError: String? = null,
-    val subtitleTracks: List<SubtitleTrackInfo> = emptyList(),
-    val isCasting: Boolean = false,
-
-    // Multi-select (batch actions on the channel list)
-    val selectedChannelIds: Set<Long> = emptySet(),
-
-    // Appearance
-    val themeMode: ThemeMode = ThemeMode.DARK,
-
-    // Local media libraries
+    val selectedCategory: String = "All",
+    val selectedChannel: TvChannelEntity? = null,
+    val currentEpgPrograms: List<TvEpgProgramEntity> = emptyList(),
+    val history: List<HistoryEntity> = emptyList(),
+    val customStreams: List<StreamEntity> = emptyList(),
     val localVideos: List<LocalVideoItem> = emptyList(),
     val localAudio: List<LocalAudioItem> = emptyList(),
+    val searchQuery: String = "",
+    val isOverlayVisible: Boolean = true,
+    val favoriteChannelIds: Set<String> = emptySet(),
+    val showFavoritesOnly: Boolean = false,
 
-    // EPG for the currently selected channel
-    val currentEpgPrograms: List<EpgProgramEntity> = emptyList(),
+    // Search/Filter enhancements
+    val sortOption: SortOption = SortOption.NAME_ASC,
 
-    // Home hub: recently played + user-added direct streams
-    val history: List<HistoryEntity> = emptyList(),
-    val customStreams: List<StreamEntity> = emptyList()
-) {
-    val isMultiSelectActive: Boolean
-        get() = selectedChannelIds.isNotEmpty()
-}
+    // Playlist management
+    val playlists: List<PlaylistEntity> = emptyList(),
+    val selectedPlaylist: PlaylistEntity? = null,
+    val selectedPlaylistItems: List<PlaylistItemEntity> = emptyList(),
+    val selectedPlaylistItemIds: Set<Long> = emptySet(),
+
+    // App settings (theme, player config, default speed) — persisted via DataStore.
+    // Live player feature state (playback speed / error / cast / sleep timer) is
+    // observed directly from TvPlayerViewModel.playerManager's own flows by the
+    // composables that need it, the same way isPlaying already is.
+    val appSettings: AppSettings = AppSettings()
+)
