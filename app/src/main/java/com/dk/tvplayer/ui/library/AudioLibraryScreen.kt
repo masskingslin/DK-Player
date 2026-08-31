@@ -11,10 +11,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Music
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -34,7 +35,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dk.tvplayer.data.local.LocalAudioItem
+import com.dk.tvplayer.data.local.SortOption
 import com.dk.tvplayer.ui.TvPlayerViewModel
+import kotlinx.coroutines.delay
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
@@ -45,23 +48,38 @@ fun AudioLibraryScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
+    var debouncedQuery by remember { mutableStateOf("") }
+    var sortOption by remember { mutableStateOf(SortOption.NAME_ASC) }
+
+    // Debounce search input by 250ms so large local libraries don't re-filter on every keystroke.
+    LaunchedEffect(searchQuery) {
+        delay(250)
+        debouncedQuery = searchQuery
+    }
 
     LaunchedEffect(Unit) {
         viewModel.refreshLocalAudio()
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Search bar
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
+        // Search bar + sort
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            placeholder = { Text("Search audio...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            singleLine = true
-        )
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Search audio...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                singleLine = true
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            SortMenuButton(current = sortOption, onSelected = { sortOption = it })
+        }
 
         if (state.localAudio.isEmpty()) {
             Column(
@@ -72,7 +90,7 @@ fun AudioLibraryScreen(
                 verticalArrangement = Arrangement.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.MusicNote,
+                    imageVector = Icons.Default.Music,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(48.dp)
@@ -90,11 +108,19 @@ fun AudioLibraryScreen(
                 )
             }
         } else {
-            val filteredAudio = state.localAudio.filter { audio ->
-                searchQuery.isEmpty() ||
-                    audio.title.contains(searchQuery, ignoreCase = true) ||
-                    audio.artist.contains(searchQuery, ignoreCase = true) ||
-                    audio.album.contains(searchQuery, ignoreCase = true)
+            val filteredAudio = remember(state.localAudio, debouncedQuery, sortOption) {
+                val filtered = state.localAudio.filter { audio ->
+                    debouncedQuery.isEmpty() ||
+                        audio.title.contains(debouncedQuery, ignoreCase = true) ||
+                        audio.artist.contains(debouncedQuery, ignoreCase = true) ||
+                        audio.album.contains(debouncedQuery, ignoreCase = true)
+                }
+                when (sortOption) {
+                    SortOption.NAME_ASC -> filtered.sortedBy { it.title.lowercase() }
+                    SortOption.NAME_DESC -> filtered.sortedByDescending { it.title.lowercase() }
+                    SortOption.RECENTLY_ADDED -> filtered.asReversed()
+                    SortOption.FAVORITES_FIRST -> filtered // no favorites concept for local audio
+                }
             }
 
             if (filteredAudio.isEmpty()) {
@@ -144,7 +170,7 @@ fun AudioTrackCard(audio: LocalAudioItem, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = Icons.Default.MusicNote,
+                imageVector = Icons.Default.Music,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(40.dp)

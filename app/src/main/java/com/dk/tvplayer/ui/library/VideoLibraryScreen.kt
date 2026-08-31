@@ -2,6 +2,7 @@ package com.dk.tvplayer.ui.library
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,17 +12,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,14 +41,16 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.dk.tvplayer.data.local.ChannelEntity
 import com.dk.tvplayer.data.local.LocalVideoItem
+import com.dk.tvplayer.data.local.SortOption
+import com.dk.tvplayer.data.local.TvChannelEntity
 import com.dk.tvplayer.ui.TvPlayerViewModel
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -55,6 +63,11 @@ fun VideoLibraryScreen(
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Local Videos", "IPTV Channels")
     val state by viewModel.uiState.collectAsState()
+
+    // Local-only search + sort (separate from the global channel search/sort in TvUiState,
+    // since local video scanning is a plain in-memory list local to this screen).
+    var localSearchQuery by remember { mutableStateOf("") }
+    var localSortOption by remember { mutableStateOf(SortOption.NAME_ASC) }
 
     LaunchedEffect(Unit) {
         viewModel.refreshLocalVideos()
@@ -72,7 +85,39 @@ fun VideoLibraryScreen(
         }
 
         if (selectedTab == 0) {
-            if (state.localVideos.isEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = localSearchQuery,
+                    onValueChange = { localSearchQuery = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Search local videos...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    singleLine = true
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                SortMenuButton(current = localSortOption, onSelected = { localSortOption = it })
+            }
+
+            val filteredVideos = remember(state.localVideos, localSearchQuery, localSortOption) {
+                val filtered = if (localSearchQuery.isBlank()) {
+                    state.localVideos
+                } else {
+                    state.localVideos.filter { it.name.contains(localSearchQuery, ignoreCase = true) }
+                }
+                when (localSortOption) {
+                    SortOption.NAME_ASC -> filtered.sortedBy { it.name.lowercase() }
+                    SortOption.NAME_DESC -> filtered.sortedByDescending { it.name.lowercase() }
+                    SortOption.RECENTLY_ADDED -> filtered.asReversed()
+                    SortOption.FAVORITES_FIRST -> filtered // local videos have no favorites concept
+                }
+            }
+
+            if (filteredVideos.isEmpty()) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -81,15 +126,17 @@ fun VideoLibraryScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "No local video files found",
+                        text = if (state.localVideos.isEmpty()) "No local video files found" else "No videos match your search",
                         style = MaterialTheme.typography.titleMedium
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Ensure video permissions are granted in settings.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (state.localVideos.isEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Ensure video permissions are granted in settings.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             } else {
                 LazyVerticalGrid(
@@ -99,7 +146,7 @@ fun VideoLibraryScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(state.localVideos) { video ->
+                    items(filteredVideos) { video ->
                         LocalVideoCard(
                             video = video,
                             onClick = { onPlayVideo(video.filePath, video.name) }
@@ -109,17 +156,24 @@ fun VideoLibraryScreen(
             }
         } else {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Search bar
-                OutlinedTextField(
-                    value = state.searchQuery,
-                    onValueChange = { viewModel.updateSearchQuery(it) },
+                // Search bar + sort
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
-                    placeholder = { Text("Search channels...") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    singleLine = true
-                )
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = state.searchQuery,
+                        onValueChange = { viewModel.updateSearchQuery(it) },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("Search channels, groups...") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    SortMenuButton(current = state.sortOption, onSelected = { viewModel.setSortOption(it) })
+                }
 
                 // Category + Favorites filter row
                 Row(
@@ -175,16 +229,40 @@ fun VideoLibraryScreen(
                         items(state.filteredChannels) { channel ->
                             IptvChannelCard(
                                 channel = channel,
-                                isFavorite = channel.isFavorite,
-                                onToggleFavorite = { viewModel.toggleFavorite(channel) },
+                                isFavorite = state.favoriteChannelIds.contains(channel.channelId),
+                                onToggleFavorite = { viewModel.toggleFavorite(channel.channelId) },
                                 onClick = {
                                     viewModel.selectChannel(channel)
-                                    onPlayVideo(channel.url, channel.name)
+                                    onPlayVideo(channel.streamUrl, channel.name)
                                 }
                             )
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun SortMenuButton(current: SortOption, onSelected: (SortOption) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(Icons.Default.SortByAlpha, contentDescription = "Sort")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            SortOption.entries.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option.label) },
+                    leadingIcon = {
+                        if (option == current) Icon(Icons.Default.Check, contentDescription = null)
+                    },
+                    onClick = {
+                        onSelected(option)
+                        expanded = false
+                    }
+                )
             }
         }
     }
@@ -224,7 +302,7 @@ fun LocalVideoCard(video: LocalVideoItem, onClick: () -> Unit) {
 
 @Composable
 fun IptvChannelCard(
-    channel: ChannelEntity,
+    channel: TvChannelEntity,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
     onClick: () -> Unit
