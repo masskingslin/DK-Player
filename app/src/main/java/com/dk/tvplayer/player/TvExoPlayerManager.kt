@@ -17,6 +17,8 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import com.google.android.gms.cast.framework.CastContext
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -39,6 +41,12 @@ data class SubtitleTrackInfo(
  * The [activePlayerFlow] always reflects whichever player (local or cast) is
  * currently "live" — UI surfaces (PlayerView) should bind to it so playback
  * seamlessly hands off when a cast session starts/ends.
+ *
+ * Chromecast is treated as fully optional: if Play Services / the Cast
+ * framework isn't in good shape on this device, [isCastAvailableFlow] simply
+ * stays false and local playback is completely unaffected. This is
+ * deliberately defensive — a broken Cast environment must never be able to
+ * break local video/audio/IPTV playback.
  */
 class TvExoPlayerManager(
     private val context: Context,
@@ -308,10 +316,23 @@ class TvExoPlayerManager(
 
     // ---- Chromecast ----
 
-    /** Call once (e.g. from MainActivity.onCreate) — safe no-op if Play Services / Cast isn't available. */
+    /**
+     * Call once (e.g. from MainActivity.onCreate) — safe no-op if Play Services / Cast
+     * isn't available. Guarded on two levels: (1) a GoogleApiAvailability precheck so we
+     * never even attempt CastContext initialization on a device that can't support it,
+     * and (2) a try/catch around the SDK calls themselves for any other failure mode.
+     * Local video/audio/IPTV playback never depends on this succeeding.
+     */
     fun initCast() {
         if (castPlayer != null) return
         try {
+            val availability = GoogleApiAvailability.getInstance()
+                .isGooglePlayServicesAvailable(context)
+            if (availability != ConnectionResult.SUCCESS) {
+                _isCastAvailable.value = false
+                return
+            }
+
             val castContext = CastContext.getSharedInstance(context)
             val player = CastPlayer(castContext)
             player.setSessionAvailabilityListener(object : SessionAvailabilityListener {
@@ -322,8 +343,10 @@ class TvExoPlayerManager(
             castPlayer = player
             _isCastAvailable.value = true
         } catch (t: Throwable) {
-            // No Play Services / no Cast receiver on this device (common on some TVs) — local-only playback.
+            // No Play Services / no Cast receiver / outdated Play Services on this device
+            // (common on some TVs and older phones) — local-only playback, no crash.
             _isCastAvailable.value = false
+            castPlayer = null
         }
     }
 
