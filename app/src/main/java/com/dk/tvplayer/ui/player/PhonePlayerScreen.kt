@@ -67,6 +67,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -80,7 +81,9 @@ import com.dk.tvplayer.ui.components.PlaybackSpeedMenu
 import com.dk.tvplayer.ui.components.SleepTimerDialog
 import com.dk.tvplayer.ui.components.SubtitleTrackDialog
 import com.google.android.gms.cast.framework.CastButtonFactory
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import java.util.Locale
@@ -100,7 +103,7 @@ fun PhonePlayerScreen(
     val audioManager = remember(context) {
         context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     }
-    val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
+    val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1) }
 
     val activePlayer by viewModel.playerManager.activePlayerFlow.collectAsState()
     var showControls by remember { mutableStateOf(true) }
@@ -120,11 +123,16 @@ fun PhonePlayerScreen(
     var showSubtitleDialog by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
 
+    // If setting up the Cast button ever throws (e.g. Cast framework not fully ready on
+    // this device even though the availability precheck passed), hide the button rather
+    // than let the AndroidView factory crash the screen.
+    var castButtonFailed by remember { mutableStateOf(false) }
+
     val focusRequester = remember { FocusRequester() }
 
     // Gesture HUD state
     var brightnessLevel by remember {
-        mutableFloatStateOf(activity?.window?.attributes?.screenBrightness?.takeIf { it >= 0f } ?: 0.5f)
+        mutableFloatStateOf(activity?.window?.attributes?.screenBrightness?.takeIf { it in 0f..1f } ?: 0.5f)
     }
     var volumeLevel by remember {
         mutableFloatStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVolume)
@@ -133,6 +141,8 @@ fun PhonePlayerScreen(
     var showVolumeHud by remember { mutableStateOf(false) }
     var scrubOffsetMs by remember { mutableLongStateOf(0L) }
     var isScrubbing by remember { mutableStateOf(false) }
+    // Tracked via Modifier.onSizeChanged so it stays correct across rotation, unlike a
+    // one-shot pointerInput(Unit) block which only ever captured the size once.
     var containerWidthPx by remember { mutableFloatStateOf(1f) }
     var containerHeightPx by remember { mutableFloatStateOf(1f) }
 
@@ -231,81 +241,91 @@ fun PhonePlayerScreen(
                     else -> false
                 }
             }
-            .pointerInput(Unit) {
-                containerWidthPx = size.width.toFloat()
-                containerHeightPx = size.height.toFloat()
+            // Reactive size tracking (fixes stale brightness/volume zone boundaries after rotation).
+            .onSizeChanged { size ->
+                containerWidthPx = size.width.toFloat().coerceAtLeast(1f)
+                containerHeightPx = size.height.toFloat().coerceAtLeast(1f)
             }
+            // Single pointerInput block running both gesture detectors in their own
+            // coroutines. Using separate .pointerInput(...) modifiers for drag vs tap
+            // caused them to intermittently steal events from each other; running them
+            // together via coroutineScope is the pattern Compose expects for combining
+            // multiple gesture detectors on the same target.
             .pointerInput(duration) {
-                var activeZone = GestureZone.NONE
-                var dragStartVolume = 0f
-                var dragStartBrightness = 0f
-                var dragStartPositionMs = 0L
-
-                detectDragGestures(
-                    onDragStart = { offset ->
-                        activeZone = when {
-                            offset.x < containerWidthPx * 0.4f -> GestureZone.BRIGHTNESS
-                            offset.x > containerWidthPx * 0.6f -> GestureZone.VOLUME
-                            else -> GestureZone.SCRUB
-                        }
-                        dragStartVolume = volumeLevel
-                        dragStartBrightness = brightnessLevel
-                        dragStartPositionMs = currentPosition
-                        if (activeZone == GestureZone.SCRUB) {
-                            isScrubbing = true
-                            scrubOffsetMs = 0L
-                        }
-                    },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        when (activeZone) {
-                            GestureZone.BRIGHTNESS -> {
-                                val delta = -dragAmount.y / containerHeightPx
-                                applyBrightness(dragStartBrightness + delta)
-                                dragStartBrightness = brightnessLevel
-                                showBrightnessHud = true
-                            }
-                            GestureZone.VOLUME -> {
-                                val delta = -dragAmount.y / containerHeightPx
-                                applyVolume(dragStartVolume + delta)
-                                dragStartVolume = volumeLevel
-                                showVolumeHud = true
-                            }
-                            GestureZone.SCRUB -> {
-                                if (duration > 0) {
-                                    val deltaMs = (dragAmount.x / containerWidthPx) * duration
-                                    scrubOffsetMs = (scrubOffsetMs + deltaMs.toLong())
-                                        .coerceIn(-dragStartPositionMs, duration - dragStartPositionMs)
+                coroutineScope {
+                    launch {
+                        detectTapGestures(
+                            onTap = { showControls = !showControls },
+                            onDoubleTap = { offset ->
+                                when {
+                                    offset.x < containerWidthPx * 0.4f ->
+                                        viewModel.playerManager.seekTo((currentPosition - 10_000).coerceAtLeast(0))
+                                    offset.x > containerWidthPx * 0.6f ->
+                                        viewModel.playerManager.seekTo((currentPosition + 10_000).coerceAtMost(duration))
+                                    else ->
+                                        viewModel.playerManager.togglePlayPause()
                                 }
                             }
-                            GestureZone.NONE -> Unit
-                        }
-                    },
-                    onDragEnd = {
-                        if (activeZone == GestureZone.SCRUB && isScrubbing) {
-                            val target = (dragStartPositionMs + scrubOffsetMs).coerceIn(0L, duration)
-                            viewModel.playerManager.seekTo(target)
-                        }
-                        isScrubbing = false
-                        scrubOffsetMs = 0L
-                        activeZone = GestureZone.NONE
+                        )
                     }
-                )
-            }
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { showControls = !showControls },
-                    onDoubleTap = { offset ->
-                        when {
-                            offset.x < size.width * 0.4f ->
-                                viewModel.playerManager.seekTo((currentPosition - 10_000).coerceAtLeast(0))
-                            offset.x > size.width * 0.6f ->
-                                viewModel.playerManager.seekTo((currentPosition + 10_000).coerceAtMost(duration))
-                            else ->
-                                viewModel.playerManager.togglePlayPause()
-                        }
+                    launch {
+                        var activeZone = GestureZone.NONE
+                        var dragStartVolume = 0f
+                        var dragStartBrightness = 0f
+                        var dragStartPositionMs = 0L
+
+                        detectDragGestures(
+                            onDragStart = { offset ->
+                                activeZone = when {
+                                    offset.x < containerWidthPx * 0.4f -> GestureZone.BRIGHTNESS
+                                    offset.x > containerWidthPx * 0.6f -> GestureZone.VOLUME
+                                    else -> GestureZone.SCRUB
+                                }
+                                dragStartVolume = volumeLevel
+                                dragStartBrightness = brightnessLevel
+                                dragStartPositionMs = currentPosition
+                                if (activeZone == GestureZone.SCRUB) {
+                                    isScrubbing = true
+                                    scrubOffsetMs = 0L
+                                }
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                when (activeZone) {
+                                    GestureZone.BRIGHTNESS -> {
+                                        val delta = -dragAmount.y / containerHeightPx
+                                        applyBrightness(dragStartBrightness + delta)
+                                        dragStartBrightness = brightnessLevel
+                                        showBrightnessHud = true
+                                    }
+                                    GestureZone.VOLUME -> {
+                                        val delta = -dragAmount.y / containerHeightPx
+                                        applyVolume(dragStartVolume + delta)
+                                        dragStartVolume = volumeLevel
+                                        showVolumeHud = true
+                                    }
+                                    GestureZone.SCRUB -> {
+                                        if (duration > 0) {
+                                            val deltaMs = (dragAmount.x / containerWidthPx) * duration
+                                            scrubOffsetMs = (scrubOffsetMs + deltaMs.toLong())
+                                                .coerceIn(-dragStartPositionMs, duration - dragStartPositionMs)
+                                        }
+                                    }
+                                    GestureZone.NONE -> Unit
+                                }
+                            },
+                            onDragEnd = {
+                                if (activeZone == GestureZone.SCRUB && isScrubbing) {
+                                    val target = (dragStartPositionMs + scrubOffsetMs).coerceIn(0L, duration)
+                                    viewModel.playerManager.seekTo(target)
+                                }
+                                isScrubbing = false
+                                scrubOffsetMs = 0L
+                                activeZone = GestureZone.NONE
+                            }
+                        )
                     }
-                )
+                }
             }
     ) {
         AndroidView(
@@ -426,11 +446,19 @@ fun PhonePlayerScreen(
                             modifier = Modifier.weight(1f)
                         )
 
-                        if (isCastAvailable) {
+                        if (isCastAvailable && !castButtonFailed) {
                             AndroidView(
                                 factory = { ctx ->
-                                    MediaRouteButton(ctx).apply {
-                                        CastButtonFactory.setUpMediaRouteButton(ctx, this)
+                                    try {
+                                        MediaRouteButton(ctx).apply {
+                                            CastButtonFactory.setUpMediaRouteButton(ctx, this)
+                                        }
+                                    } catch (t: Throwable) {
+                                        // Cast framework wasn't actually ready despite the
+                                        // availability precheck — degrade gracefully instead
+                                        // of crashing the player screen.
+                                        castButtonFailed = true
+                                        android.widget.FrameLayout(ctx)
                                     }
                                 }
                             )
