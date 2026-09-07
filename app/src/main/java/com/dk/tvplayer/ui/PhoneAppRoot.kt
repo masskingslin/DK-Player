@@ -1,8 +1,11 @@
 package com.dk.tvplayer.ui
 
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Settings
@@ -23,6 +26,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.dk.tvplayer.ui.downloads.DownloadsScreen
 import com.dk.tvplayer.ui.home.HomeHubScreen
 import com.dk.tvplayer.ui.library.AudioLibraryScreen
 import com.dk.tvplayer.ui.library.VideoLibraryScreen
@@ -35,6 +39,7 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
 sealed class Screen(val route: String, val label: String, val icon: ImageVector) {
+    data object Home : Screen("home", "Home", Icons.Default.Home)
     data object Library : Screen("library", "Videos", Icons.Default.Folder)
     data object Audio : Screen("audio", "Audio", Icons.Default.MusicNote)
     data object Playlists : Screen("playlists", "Playlists", Icons.Default.PlaylistPlay)
@@ -48,6 +53,7 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
     val currentRoute = navBackStackEntry?.destination?.route
 
     val navItems = listOf(
+        Screen.Home,
         Screen.Library,
         Screen.Audio,
         Screen.Playlists,
@@ -57,7 +63,7 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
     // Hide the bottom bar on the full-screen player and on secondary/detail screens
     // reached via Settings or Playlists, matching the player's own behavior.
     val hideBottomBar = currentRoute?.startsWith("player") == true ||
-        currentRoute == "history_streams" ||
+        currentRoute == "downloads" ||
         currentRoute?.startsWith("playlist_detail") == true
 
     fun navigateToPlayer(url: String, title: String) {
@@ -92,9 +98,30 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = Screen.Library.route,
-            modifier = Modifier.padding(innerPadding)
+            startDestination = Screen.Home.route,
+            modifier = Modifier.padding(innerPadding),
+            // A quick crossfade between tabs and screens reads as much more deliberate
+            // than Navigation-Compose's default (an abrupt cut with no transition at all).
+            enterTransition = { fadeIn(animationSpec = androidx.compose.animation.core.tween(200)) },
+            exitTransition = { fadeOut(animationSpec = androidx.compose.animation.core.tween(150)) },
+            popEnterTransition = { fadeIn(animationSpec = androidx.compose.animation.core.tween(200)) },
+            popExitTransition = { fadeOut(animationSpec = androidx.compose.animation.core.tween(150)) }
         ) {
+            composable(Screen.Home.route) {
+                HomeHubScreen(
+                    viewModel = viewModel,
+                    onPlayMedia = { url, title -> navigateToPlayer(url, title) },
+                    onOpenDownloads = { navController.navigate("downloads") },
+                    onOpenPlaylists = {
+                        navController.navigate(Screen.Playlists.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                )
+            }
+
             composable(Screen.Library.route) {
                 VideoLibraryScreen(
                     viewModel = viewModel,
@@ -119,16 +146,12 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
             composable(Screen.Settings.route) {
                 SettingsScreen(
                     viewModel = viewModel,
-                    onOpenHistoryAndStreams = { navController.navigate("history_streams") }
+                    onOpenDownloads = { navController.navigate("downloads") }
                 )
             }
 
-            // Hidden screen — not in the bottom nav, reached only via Settings.
-            // Holds the old Home tab's content: Recently Watched + custom Streams.
-            composable("history_streams") {
-                HomeHubScreen(
-                    viewModel = viewModel,
-                    onPlayMedia = { url, title -> navigateToPlayer(url, title) },
+            composable("downloads") {
+                DownloadsScreen(
                     onBack = { navController.popBackStack() }
                 )
             }
