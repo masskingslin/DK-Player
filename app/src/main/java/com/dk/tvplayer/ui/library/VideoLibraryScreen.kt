@@ -1,5 +1,7 @@
 package com.dk.tvplayer.ui.library
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,8 +16,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Movie
@@ -42,10 +46,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dk.tvplayer.data.local.LocalVideoItem
@@ -146,11 +154,40 @@ fun VideoLibraryScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(filteredVideos) { video ->
-                        LocalVideoCard(
-                            video = video,
-                            onClick = { onPlayVideo(video.filePath, video.name) }
-                        )
+                    val showHeaders = state.appSettings.showListHeaders &&
+                        (localSortOption == SortOption.NAME_ASC || localSortOption == SortOption.NAME_DESC)
+                    if (showHeaders) {
+                        val grouped = filteredVideos.groupBy { video ->
+                            val c = video.name.firstOrNull()?.uppercaseChar()
+                            if (c != null && c.isLetter()) c.toString() else "#"
+                        }
+                        grouped.forEach { (header, groupItems) ->
+                            item(span = { GridItemSpan(maxLineSpan) }, key = "header_$header") {
+                                Text(
+                                    text = header,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                            }
+                            items(groupItems, key = { it.filePath }) { video ->
+                                LocalVideoCard(
+                                    video = video,
+                                    showThumbnail = state.appSettings.videoThumbnailsEnabled,
+                                    onClick = { onPlayVideo(video.filePath, video.name) },
+                                    modifier = Modifier.animateItem()
+                                )
+                            }
+                        }
+                    } else {
+                        items(filteredVideos, key = { it.filePath }) { video ->
+                            LocalVideoCard(
+                                video = video,
+                                showThumbnail = state.appSettings.videoThumbnailsEnabled,
+                                onClick = { onPlayVideo(video.filePath, video.name) },
+                                modifier = Modifier.animateItem()
+                            )
+                        }
                     }
                 }
             }
@@ -226,16 +263,48 @@ fun VideoLibraryScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        items(state.filteredChannels) { channel ->
-                            IptvChannelCard(
-                                channel = channel,
-                                isFavorite = state.favoriteChannelIds.contains(channel.channelId),
-                                onToggleFavorite = { viewModel.toggleFavorite(channel.channelId) },
-                                onClick = {
-                                    viewModel.selectChannel(channel)
-                                    onPlayVideo(channel.streamUrl, channel.name)
+                        val showHeaders = state.appSettings.showListHeaders &&
+                            (state.sortOption == SortOption.NAME_ASC || state.sortOption == SortOption.NAME_DESC)
+                        if (showHeaders) {
+                            val grouped = state.filteredChannels.groupBy { channel ->
+                                val c = channel.name.firstOrNull()?.uppercaseChar()
+                                if (c != null && c.isLetter()) c.toString() else "#"
+                            }
+                            grouped.forEach { (header, groupItems) ->
+                                item(span = { GridItemSpan(maxLineSpan) }, key = "header_$header") {
+                                    Text(
+                                        text = header,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(vertical = 4.dp)
+                                    )
                                 }
-                            )
+                                items(groupItems, key = { it.channelId }) { channel ->
+                                    IptvChannelCard(
+                                        channel = channel,
+                                        isFavorite = state.favoriteChannelIds.contains(channel.channelId),
+                                        onToggleFavorite = { viewModel.toggleFavorite(channel.channelId) },
+                                        onClick = {
+                                            viewModel.selectChannel(channel)
+                                            onPlayVideo(channel.streamUrl, channel.name)
+                                        },
+                                        modifier = Modifier.animateItem()
+                                    )
+                                }
+                            }
+                        } else {
+                            items(state.filteredChannels, key = { it.channelId }) { channel ->
+                                IptvChannelCard(
+                                    channel = channel,
+                                    isFavorite = state.favoriteChannelIds.contains(channel.channelId),
+                                    onToggleFavorite = { viewModel.toggleFavorite(channel.channelId) },
+                                    modifier = Modifier.animateItem(),
+                                    onClick = {
+                                        viewModel.selectChannel(channel)
+                                        onPlayVideo(channel.streamUrl, channel.name)
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -269,20 +338,52 @@ fun SortMenuButton(current: SortOption, onSelected: (SortOption) -> Unit) {
 }
 
 @Composable
-fun LocalVideoCard(video: LocalVideoItem, onClick: () -> Unit) {
+@Composable
+fun LocalVideoCard(video: LocalVideoItem, showThumbnail: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Icon(
-                imageVector = Icons.Default.Movie,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(36.dp)
-            )
+            if (showThumbnail) {
+                val thumbnail by produceState<android.graphics.Bitmap?>(initialValue = null, video.filePath) {
+                    value = com.dk.tvplayer.util.VideoThumbnailLoader.getThumbnail(video.filePath)
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(90.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surface),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val bitmap = thumbnail
+                    if (bitmap != null) {
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Movie,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Movie,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = video.name,
@@ -300,15 +401,17 @@ fun LocalVideoCard(video: LocalVideoItem, onClick: () -> Unit) {
     }
 }
 
+
 @Composable
 fun IptvChannelCard(
     channel: TvChannelEntity,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)

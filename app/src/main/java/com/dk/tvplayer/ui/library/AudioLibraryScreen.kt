@@ -142,11 +142,38 @@ fun AudioLibraryScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(filteredAudio) { audio ->
-                        AudioTrackCard(
-                            audio = audio,
-                            onClick = { onPlayAudio(audio.filePath, audio.title) }
-                        )
+                    val showHeaders = state.appSettings.showListHeaders &&
+                        (sortOption == SortOption.NAME_ASC || sortOption == SortOption.NAME_DESC)
+                    if (showHeaders) {
+                        val grouped = filteredAudio.groupBy { audio ->
+                            val c = audio.title.firstOrNull()?.uppercaseChar()
+                            if (c != null && c.isLetter()) c.toString() else "#"
+                        }
+                        grouped.forEach { (header, groupItems) ->
+                            item(key = "header_$header") {
+                                Text(
+                                    text = header,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
+                                )
+                            }
+                            items(groupItems, key = { it.filePath }) { audio ->
+                                AudioTrackCard(
+                                    audio = audio,
+                                    onClick = { onPlayAudio(audio.filePath, audio.title) },
+                                    modifier = Modifier.animateItem()
+                                )
+                            }
+                        }
+                    } else {
+                        items(filteredAudio, key = { it.filePath }) { audio ->
+                            AudioTrackCard(
+                                audio = audio,
+                                onClick = { onPlayAudio(audio.filePath, audio.title) },
+                                modifier = Modifier.animateItem()
+                            )
+                        }
                     }
                 }
             }
@@ -155,9 +182,9 @@ fun AudioLibraryScreen(
 }
 
 @Composable
-fun AudioTrackCard(audio: LocalAudioItem, onClick: () -> Unit) {
+fun AudioTrackCard(audio: LocalAudioItem, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
