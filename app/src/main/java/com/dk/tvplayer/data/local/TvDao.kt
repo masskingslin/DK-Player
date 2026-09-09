@@ -46,6 +46,9 @@ interface HistoryDao {
     @Query("SELECT * FROM playback_history ORDER BY lastWatchedTimestamp DESC LIMIT 30")
     fun getRecentHistory(): Flow<List<HistoryEntity>>
 
+    @Query("SELECT * FROM playback_history WHERE mediaUrl = :url LIMIT 1")
+    suspend fun getByUrl(url: String): HistoryEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(history: HistoryEntity)
 
