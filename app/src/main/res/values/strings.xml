@@ -68,4 +68,7 @@
     <string name="action_add">Add</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_retry">Retry</string>
+
+    <!-- Offline Downloads -->
+    <string name="download_channel_name">Downloads</string>
 </resources>
