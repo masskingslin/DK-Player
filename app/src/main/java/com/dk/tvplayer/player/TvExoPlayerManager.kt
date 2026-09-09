@@ -3,6 +3,7 @@
 package com.dk.tvplayer.player
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.media3.cast.CastPlayer
 import androidx.media3.cast.SessionAvailabilityListener
@@ -13,9 +14,14 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.session.MediaSession
+import androidx.core.content.ContextCompat
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
@@ -36,6 +42,13 @@ data class SubtitleTrackInfo(
     val isSelected: Boolean
 )
 
+data class AudioTrackInfo(
+    val groupIndex: Int,
+    val trackIndex: Int,
+    val label: String,
+    val isSelected: Boolean
+)
+
 /**
  * Wraps local ExoPlayer playback plus an optional Chromecast [CastPlayer].
  * The [activePlayerFlow] always reflects whichever player (local or cast) is
@@ -50,7 +63,8 @@ data class SubtitleTrackInfo(
  */
 class TvExoPlayerManager(
     private val context: Context,
-    hwAccelerationEnabled: Boolean = true
+    hwAccelerationEnabled: Boolean = true,
+    cacheDataSourceFactory: CacheDataSource.Factory? = null
 ) {
     companion object {
         private const val MAX_RETRY_ATTEMPTS = 3
@@ -74,6 +88,15 @@ class TvExoPlayerManager(
 
     val localPlayer: ExoPlayer = ExoPlayer.Builder(context, renderersFactory)
         .setTrackSelector(trackSelector)
+        .apply {
+            // When a download cache is supplied, playback transparently reads from it for
+            // anything that's been downloaded (see DownloadManagerHolder) and falls back
+            // to the network for everything else — no special-casing needed at the call
+            // site that starts playback.
+            if (cacheDataSourceFactory != null) {
+                setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
+            }
+        }
         .build()
 
     /** Kept for backward compatibility with call sites that only ever used local playback (e.g. TV surface). */
@@ -108,9 +131,32 @@ class TvExoPlayerManager(
     private val _sleepTimerRemainingSec = MutableStateFlow<Long?>(null)
     val sleepTimerRemainingSecFlow: StateFlow<Long?> = _sleepTimerRemainingSec.asStateFlow()
 
+    // Frame rate of the currently playing local video track, if known — used by
+    // MainActivity to optionally match the display's refresh rate to it.
+    private val _videoFrameRateFlow = MutableStateFlow<Float?>(null)
+    val videoFrameRateFlow: StateFlow<Float?> = _videoFrameRateFlow.asStateFlow()
+
     private var lastPlayedUrl: String? = null
     private var lastPlayedTitle: String? = null
     private var retryAttempt = 0
+    private var backgroundPlaybackEnabled = false
+
+    /** Wraps localPlayer so PlaybackService (and, if ever needed, other controllers) can
+     *  discover and control the same player instance the UI is using. */
+    val mediaSession: MediaSession = MediaSession.Builder(context, localPlayer).build()
+
+    /** Called by the ViewModel whenever the "Background Audio Playback" setting changes. */
+    fun setBackgroundPlaybackEnabled(enabled: Boolean) {
+        backgroundPlaybackEnabled = enabled
+    }
+
+    private fun maybeStartPlaybackService() {
+        if (!backgroundPlaybackEnabled) return
+        runCatching {
+            val intent = Intent(context, PlaybackService::class.java)
+            ContextCompat.startForegroundService(context, intent)
+        }
+    }
 
     private var progressJob: Job? = null
     private var retryJob: Job? = null
@@ -126,7 +172,14 @@ class TvExoPlayerManager(
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (_activePlayer.value === player) {
                     _isPlayingFlow.value = isPlaying
-                    if (isPlaying) startProgressTracker() else stopProgressTracker()
+                    if (isPlaying) {
+                        startProgressTracker()
+                        if (player === localPlayer) {
+                            maybeStartPlaybackService()
+                        }
+                    } else {
+                        stopProgressTracker()
+                    }
                 }
             }
 
@@ -136,6 +189,7 @@ class TvExoPlayerManager(
                         _durationFlow.value = player.duration.coerceAtLeast(0L)
                         retryAttempt = 0
                         _playbackError.value = null
+                        updateVideoFrameRate()
                     }
                 }
             }
@@ -145,7 +199,18 @@ class TvExoPlayerManager(
                     handlePlaybackError(error)
                 }
             }
+
+            override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                if (_activePlayer.value === player) {
+                    updateVideoFrameRate()
+                }
+            }
         })
+    }
+
+    private fun updateVideoFrameRate() {
+        val frameRate = localPlayer.videoFormat?.frameRate
+        _videoFrameRateFlow.value = if (frameRate != null && frameRate > 0f) frameRate else null
     }
 
     // ---- Playback ----
@@ -187,6 +252,18 @@ class TvExoPlayerManager(
         _activePlayer.value.setPlaybackSpeed(speed)
     }
 
+    /** Fast seek trades exact-frame accuracy for speed by snapping to the nearest keyframe. */
+    fun setFastSeekEnabled(enabled: Boolean) {
+        localPlayer.setSeekParameters(if (enabled) SeekParameters.CLOSEST_SYNC else SeekParameters.EXACT)
+    }
+
+    /** Caps the max selected video track resolution; pass null to remove the cap. */
+    fun setMaxVideoResolution(maxWidth: Int, maxHeight: Int) {
+        trackSelector.parameters = trackSelector.parameters.buildUpon()
+            .setMaxVideoSize(maxWidth, maxHeight)
+            .build()
+    }
+
     private fun startProgressTracker() {
         stopProgressTracker()
         progressJob = scope.launch {
@@ -207,7 +284,7 @@ class TvExoPlayerManager(
     // ---- Error handling & retry ----
 
     private fun handlePlaybackError(error: PlaybackException) {
-        _playbackError.value = error.message ?: error.errorCodeName
+        _playbackError.value = friendlyErrorMessage(error)
         if (retryAttempt < MAX_RETRY_ATTEMPTS) {
             val delayMs = 1000L * (1 shl retryAttempt)
             retryAttempt++
@@ -217,6 +294,33 @@ class TvExoPlayerManager(
                 retryPlayback()
             }
         }
+    }
+
+    /** Maps ExoPlayer's error codes to short, actionable messages instead of raw exception text. */
+    private fun friendlyErrorMessage(error: PlaybackException): String = when (error.errorCode) {
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
+            "Network connection lost. Retrying…"
+        PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ->
+            "Stream unavailable right now (server error). Retrying…"
+        PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ->
+            "Media file not found. It may have been moved or deleted."
+        PlaybackException.ERROR_CODE_IO_NO_PERMISSION ->
+            "Permission denied trying to access this media."
+        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+        PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+        PlaybackException.ERROR_CODE_DECODING_FAILED ->
+            "This device can't decode this video/audio format."
+        PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+        PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
+        PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+        PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED ->
+            "This stream's format isn't supported or the file is corrupted."
+        PlaybackException.ERROR_CODE_TIMEOUT ->
+            "Connection timed out."
+        PlaybackException.ERROR_CODE_IO_UNSPECIFIED ->
+            "Couldn't load this stream. Check your connection and try again."
+        else -> error.message ?: "Playback error (${error.errorCodeName})"
     }
 
     /** Manual retry (e.g. user taps a "Retry" banner) or automatic backoff retry. */
@@ -261,6 +365,32 @@ class TvExoPlayerManager(
         trackSelector.parameters = trackSelector.parameters.buildUpon()
             .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .build()
+    }
+
+    // ---- Audio tracks (multi-language / commentary tracks) ----
+
+    fun availableAudioTracks(): List<AudioTrackInfo> {
+        val tracks = localPlayer.currentTracks
+        val result = mutableListOf<AudioTrackInfo>()
+        tracks.groups.forEachIndexed { groupIndex, group ->
+            if (group.type == C.TRACK_TYPE_AUDIO) {
+                for (trackIndex in 0 until group.length) {
+                    val format = group.getTrackFormat(trackIndex)
+                    val label = format.label ?: format.language ?: "Audio ${groupIndex + 1}.${trackIndex + 1}"
+                    result.add(AudioTrackInfo(groupIndex, trackIndex, label, group.isTrackSelected(trackIndex)))
+                }
+            }
+        }
+        return result
+    }
+
+    fun selectAudioTrack(groupIndex: Int, trackIndex: Int) {
+        val group = localPlayer.currentTracks.groups.getOrNull(groupIndex) ?: return
+        val override = TrackSelectionOverride(group.mediaTrackGroup, trackIndex)
+        trackSelector.parameters = trackSelector.parameters.buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+            .setOverrideForType(override)
             .build()
     }
 
@@ -384,6 +514,7 @@ class TvExoPlayerManager(
         stopProgressTracker()
         retryJob?.cancel()
         sleepTimerJob?.cancel()
+        mediaSession.release()
         castPlayer?.setSessionAvailabilityListener(null)
         castPlayer?.release()
         localPlayer.release()
