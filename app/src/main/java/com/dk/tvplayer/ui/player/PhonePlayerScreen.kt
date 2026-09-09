@@ -30,6 +30,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Forward10
@@ -53,6 +55,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,15 +74,18 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.mediarouter.app.MediaRouteButton
 import com.dk.tvplayer.MainActivity
 import com.dk.tvplayer.PipState
 import com.dk.tvplayer.ui.TvPlayerViewModel
+import com.dk.tvplayer.ui.components.AudioTrackDialog
 import com.dk.tvplayer.ui.components.ErrorRetryBanner
 import com.dk.tvplayer.ui.components.PlaybackSpeedMenu
 import com.dk.tvplayer.ui.components.SleepTimerDialog
 import com.dk.tvplayer.ui.components.SubtitleTrackDialog
+import com.dk.tvplayer.ui.components.VideoFitMenu
 import com.google.android.gms.cast.framework.CastButtonFactory
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -105,8 +111,8 @@ fun PhonePlayerScreen(
     }
     val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1) }
 
-    val activePlayer by viewModel.playerManager.activePlayerFlow.collectAsState()
-    var showControls by remember { mutableStateOf(true) }
+    val uiState by viewModel.uiState.collectAsState()
+    val activePlayer by viewModel.playerManager.activePlayerFlow.collectAsState()    var showControls by remember { mutableStateOf(true) }
     val isPlaying by viewModel.playerManager.isPlayingFlow.collectAsState()
     val currentPosition by viewModel.playerManager.currentPositionFlow.collectAsState()
     val duration by viewModel.playerManager.durationFlow.collectAsState()
@@ -122,6 +128,12 @@ fun PhonePlayerScreen(
     var showSpeedMenu by remember { mutableStateOf(false) }
     var showSubtitleDialog by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
+    var showFitMenu by remember { mutableStateOf(false) }
+    var showAudioTrackDialog by remember { mutableStateOf(false) }
+    // Kept so subtitle style (size/color) can be reapplied whenever the setting changes.
+    var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
+    // Video Fit / Zoom / Stretch / Fixed Width / Fixed Height — applied to PlayerView below.
+    var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
 
     // If setting up the Cast button ever throws (e.g. Cast framework not fully ready on
     // this device even though the availability precheck passed), hide the button rather
@@ -173,16 +185,18 @@ fun PhonePlayerScreen(
         }
     }
 
+    // Auto-hide brightness/volume HUD pills shortly after the last change, so they never
+    // sit on screen and block the picture while a movie is playing.
     LaunchedEffect(showBrightnessHud) {
         if (showBrightnessHud) {
-            delay(1200)
+            delay(900)
             showBrightnessHud = false
         }
     }
 
     LaunchedEffect(showVolumeHud) {
         if (showVolumeHud) {
-            delay(1200)
+            delay(900)
             showVolumeHud = false
         }
     }
@@ -247,10 +261,9 @@ fun PhonePlayerScreen(
                 containerHeightPx = size.height.toFloat().coerceAtLeast(1f)
             }
             // Single pointerInput block running both gesture detectors in their own
-            // coroutines. Using separate .pointerInput(...) modifiers for drag vs tap
-            // caused them to intermittently steal events from each other; running them
-            // together via coroutineScope is the pattern Compose expects for combining
-            // multiple gesture detectors on the same target.
+            // coroutines — combining drag + tap detection in one block (rather than as
+            // separate .pointerInput() modifiers) is what makes both reliably see every
+            // touch event instead of intermittently stealing events from each other.
             .pointerInput(duration) {
                 coroutineScope {
                     launch {
@@ -321,6 +334,10 @@ fun PhonePlayerScreen(
                                 }
                                 isScrubbing = false
                                 scrubOffsetMs = 0L
+                                // Force the HUD to hide right away once the finger lifts,
+                                // instead of waiting out the auto-hide delay.
+                                if (activeZone == GestureZone.BRIGHTNESS) showBrightnessHud = false
+                                if (activeZone == GestureZone.VOLUME) showVolumeHud = false
                                 activeZone = GestureZone.NONE
                             }
                         )
@@ -332,16 +349,41 @@ fun PhonePlayerScreen(
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     this.player = activePlayer
+                    this.resizeMode = resizeMode
                     useController = false
                     layoutParams = FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
+                    playerViewRef = this
                 }
             },
-            update = { playerView -> playerView.player = activePlayer },
+            update = { playerView ->
+                playerView.player = activePlayer
+                playerView.resizeMode = resizeMode
+            },
             modifier = Modifier.fillMaxSize()
         )
+
+        // Applies the persisted subtitle size/color preference to the caption view
+        // whenever the player view is (re)created or the settings change.
+        LaunchedEffect(playerViewRef, uiState.appSettings.subtitleTextSize, uiState.appSettings.subtitleColor) {
+            val subtitleView = playerViewRef?.subtitleView ?: return@LaunchedEffect
+            subtitleView.setFixedTextSize(
+                android.util.TypedValue.COMPLEX_UNIT_SP,
+                uiState.appSettings.subtitleTextSize.sp
+            )
+            subtitleView.setStyle(
+                androidx.media3.ui.CaptionStyleCompat(
+                    uiState.appSettings.subtitleColor.colorArgb,
+                    android.graphics.Color.TRANSPARENT,
+                    android.graphics.Color.TRANSPARENT,
+                    androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                    android.graphics.Color.BLACK,
+                    null
+                )
+            )
+        }
 
         // Brightness HUD pill (left edge)
         AnimatedVisibility(
@@ -464,6 +506,12 @@ fun PhonePlayerScreen(
                             )
                         }
 
+                        IconButton(onClick = { showFitMenu = !showFitMenu }) {
+                            Icon(Icons.Default.AspectRatio, contentDescription = "Video fit", tint = Color.White)
+                        }
+                        IconButton(onClick = { showAudioTrackDialog = true }) {
+                            Icon(Icons.Default.Audiotrack, contentDescription = "Audio track", tint = Color.White)
+                        }
                         IconButton(onClick = { showSubtitleDialog = true }) {
                             Icon(Icons.Default.ClosedCaption, contentDescription = "Subtitles", tint = Color.White)
                         }
@@ -487,6 +535,19 @@ fun PhonePlayerScreen(
                                 tint = Color.White
                             )
                         }
+                    }
+
+                    AnimatedVisibility(visible = showFitMenu, enter = fadeIn(), exit = fadeOut()) {
+                        VideoFitMenu(
+                            currentResizeMode = resizeMode,
+                            onModeSelected = { mode ->
+                                resizeMode = mode
+                                showFitMenu = false
+                            },
+                            modifier = Modifier
+                                .align(Alignment.End)
+                                .padding(end = 16.dp)
+                        )
                     }
 
                     AnimatedVisibility(visible = showSpeedMenu, enter = fadeIn(), exit = fadeOut()) {
@@ -587,6 +648,17 @@ fun PhonePlayerScreen(
                 }
             }
         }
+    }
+
+    if (showAudioTrackDialog) {
+        AudioTrackDialog(
+            tracks = viewModel.playerManager.availableAudioTracks(),
+            onDismiss = { showAudioTrackDialog = false },
+            onTrackSelected = { groupIndex, trackIndex ->
+                viewModel.playerManager.selectAudioTrack(groupIndex, trackIndex)
+                showAudioTrackDialog = false
+            }
+        )
     }
 
     if (showSubtitleDialog) {
