@@ -80,6 +80,10 @@ fun PlaylistDetailScreen(
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val downloadTracker = remember {
+        (context.applicationContext as com.dk.tvplayer.DkPlayerApplication).downloadManagerHolder.downloadTracker
+    }
+    val downloads by downloadTracker.downloads.collectAsState()
 
     var isSelectionMode by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
@@ -258,7 +262,19 @@ fun PlaylistDetailScreen(
                         },
                         onMoveUp = { viewModel.movePlaylistItem(item, moveUp = true) },
                         onMoveDown = { viewModel.movePlaylistItem(item, moveUp = false) },
-                        onDelete = { viewModel.removeItemFromPlaylist(item) }
+                        onDelete = { viewModel.removeItemFromPlaylist(item) },
+                        downloadItem = downloads[item.mediaUrl],
+                        onToggleDownload = {
+                            val existing = downloads[item.mediaUrl]
+                            when {
+                                existing == null -> downloadTracker.startDownload(item.mediaUrl, item.title)
+                                existing.state == androidx.media3.exoplayer.offline.Download.STATE_COMPLETED ->
+                                    downloadTracker.removeDownload(item.mediaUrl)
+                                existing.state == androidx.media3.exoplayer.offline.Download.STATE_FAILED ->
+                                    downloadTracker.startDownload(item.mediaUrl, item.title)
+                                else -> Unit // already downloading/queued — tapping again does nothing
+                            }
+                        }
                     )
                 }
             }
@@ -278,7 +294,9 @@ private fun PlaylistItemRow(
     onLongClick: () -> Unit,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    downloadItem: com.dk.tvplayer.download.DownloadItem?,
+    onToggleDownload: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
@@ -329,6 +347,7 @@ private fun PlaylistItemRow(
             }
 
             if (!isSelectionMode) {
+                DownloadStatusButton(downloadItem = downloadItem, onClick = onToggleDownload)
                 Column {
                     IconButton(onClick = onMoveUp, enabled = index > 0, modifier = Modifier.size(28.dp)) {
                         Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move up")
@@ -349,6 +368,42 @@ private fun PlaylistItemRow(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun DownloadStatusButton(
+    downloadItem: com.dk.tvplayer.download.DownloadItem?,
+    onClick: () -> Unit
+) {
+    val isDownloading = downloadItem != null && downloadItem.state == androidx.media3.exoplayer.offline.Download.STATE_DOWNLOADING
+    val isCompleted = downloadItem != null && downloadItem.state == androidx.media3.exoplayer.offline.Download.STATE_COMPLETED
+    val isFailed = downloadItem != null && downloadItem.state == androidx.media3.exoplayer.offline.Download.STATE_FAILED
+
+    IconButton(onClick = onClick, modifier = Modifier.size(28.dp)) {
+        when {
+            isDownloading -> {
+                androidx.compose.material3.CircularProgressIndicator(
+                    progress = (downloadItem?.percentDownloaded ?: 0f) / 100f,
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp
+                )
+            }
+            isCompleted -> Icon(
+                androidx.compose.material.icons.Icons.Default.DownloadDone,
+                contentDescription = "Downloaded — tap to remove",
+                tint = MaterialTheme.colorScheme.primary
+            )
+            isFailed -> Icon(
+                androidx.compose.material.icons.Icons.Default.ErrorOutline,
+                contentDescription = "Download failed — tap to retry",
+                tint = MaterialTheme.colorScheme.error
+            )
+            else -> Icon(
+                androidx.compose.material.icons.Icons.Default.Download,
+                contentDescription = "Download for offline playback"
+            )
         }
     }
 }
