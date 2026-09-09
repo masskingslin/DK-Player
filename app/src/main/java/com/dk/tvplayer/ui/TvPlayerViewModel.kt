@@ -1,17 +1,23 @@
 package com.dk.tvplayer.ui
 
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dk.tvplayer.data.backup.BackupBundle
 import com.dk.tvplayer.data.backup.BackupPlaylist
 import com.dk.tvplayer.data.backup.SettingsBackupManager
+import com.dk.tvplayer.data.local.AppLanguage
 import com.dk.tvplayer.data.local.AppThemeMode
 import com.dk.tvplayer.data.local.PlaylistEntity
 import com.dk.tvplayer.data.local.PlaylistItemEntity
 import com.dk.tvplayer.data.local.SettingsDataStore
 import com.dk.tvplayer.data.local.SortOption
 import com.dk.tvplayer.data.local.StreamEntity
+import com.dk.tvplayer.data.local.SubtitleColorPreset
+import com.dk.tvplayer.data.local.SubtitleTextSize
 import com.dk.tvplayer.data.local.TvChannelEntity
+import com.dk.tvplayer.data.local.VideoResolutionCap
 import com.dk.tvplayer.data.parser.PlaylistExporter
 import com.dk.tvplayer.data.repository.TvRepository
 import com.dk.tvplayer.player.TvExoPlayerManager
@@ -81,8 +87,13 @@ class TvPlayerViewModel(
         viewModelScope.launch {
             settingsDataStore.settingsFlow.collect { settings ->
                 _uiState.update { it.copy(sortOption = settings.sortOption, appSettings = settings) }
-                // Keep the live player's default speed in sync with the persisted preference.
+                // Keep the live player in sync with settings that can change at runtime
+                // (hardware acceleration is the one exception — see TvExoPlayerManager).
                 playerManager.setPlaybackSpeed(settings.defaultPlaybackSpeed)
+                playerManager.setFastSeekEnabled(settings.fastSeekEnabled)
+                playerManager.setMaxVideoResolution(settings.maxVideoResolution.width, settings.maxVideoResolution.height)
+                playerManager.setBackgroundPlaybackEnabled(settings.backgroundAudioPlayback)
+                applyLocaleIfNeeded(settings.appLanguage)
             }
         }
     }
@@ -191,12 +202,35 @@ class TvPlayerViewModel(
         observeEpg(channel.channelId)
     }
 
+    /**
+     * Plays a piece of media, resuming from the last saved position when "Auto Resume
+     * Playback" is enabled and there's a meaningful saved position (not right at the
+     * start, and not already at/near the end).
+     */
+    /**
+     * Plays a piece of media, resuming from the last saved position when "Auto Resume
+     * Playback" is enabled and there's a meaningful saved position (not right at the
+     * start, and not already at/near the end). Skipped entirely in Incognito Mode.
+     */
     fun playMedia(url: String, title: String) {
-        playerManager.play(url, title = title)
-        savePlaybackProgress(url, title, 0L, 0L)
+        viewModelScope.launch {
+            val settings = _uiState.value.appSettings
+            val startPositionMs = if (settings.autoResumePlayback && !settings.incognitoMode) {
+                val entry = repository.getHistoryEntryOnce(url)
+                val savedPosition = entry?.lastPositionMs ?: 0L
+                val savedDuration = entry?.durationMs ?: 0L
+                val nearEnd = savedDuration > 0 && savedPosition >= savedDuration - 5_000
+                if (savedPosition > 5_000 && !nearEnd) savedPosition else 0L
+            } else {
+                0L
+            }
+            playerManager.play(url, startPositionMs = startPositionMs, title = title)
+        }
     }
 
+    /** No-op in Incognito Mode — nothing gets written to playback history. */
     fun savePlaybackProgress(url: String, title: String, position: Long, duration: Long) {
+        if (_uiState.value.appSettings.incognitoMode) return
         viewModelScope.launch {
             repository.saveHistory(url, title, position, duration)
         }
@@ -392,6 +426,66 @@ class TvPlayerViewModel(
         playerManager.setPlaybackSpeed(speed)
     }
 
+    fun setFastSeekEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.setFastSeekEnabled(enabled) }
+        playerManager.setFastSeekEnabled(enabled)
+    }
+
+    fun setMatchDisplayFrameRate(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.setMatchDisplayFrameRate(enabled) }
+    }
+
+    fun setMaxVideoResolution(cap: VideoResolutionCap) {
+        viewModelScope.launch { settingsDataStore.setMaxVideoResolution(cap) }
+        playerManager.setMaxVideoResolution(cap.width, cap.height)
+    }
+
+    fun setVideoThumbnailsEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.setVideoThumbnailsEnabled(enabled) }
+    }
+
+    fun setIncognitoMode(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.setIncognitoMode(enabled) }
+    }
+
+    fun setSubtitleTextSize(size: SubtitleTextSize) {
+        viewModelScope.launch { settingsDataStore.setSubtitleTextSize(size) }
+    }
+
+    fun setSubtitleColor(color: SubtitleColorPreset) {
+        viewModelScope.launch { settingsDataStore.setSubtitleColor(color) }
+    }
+
+    fun setShowListHeaders(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.setShowListHeaders(enabled) }
+    }
+
+    /**
+     * Switches the app's language. Note: this changes the system-level locale (date/number
+     * formatting and any actual string resources), but most of this app's UI text is
+     * hardcoded English in Compose code rather than pulled from strings.xml, so it won't
+     * retranslate that text on its own — see the AppLanguage doc comment.
+     */
+    fun setAppLanguage(language: AppLanguage) {
+        viewModelScope.launch { settingsDataStore.setAppLanguage(language) }
+        applyLocaleIfNeeded(language)
+    }
+
+    private fun applyLocaleIfNeeded(language: AppLanguage) {
+        val target = localeListFor(language)
+        val current = AppCompatDelegate.getApplicationLocales()
+        if (current.toLanguageTags() != target.toLanguageTags()) {
+            AppCompatDelegate.setApplicationLocales(target)
+        }
+    }
+
+    private fun localeListFor(language: AppLanguage): LocaleListCompat =
+        if (language.localeTag.isEmpty()) {
+            LocaleListCompat.getEmptyLocaleList()
+        } else {
+            LocaleListCompat.forLanguageTags(language.localeTag)
+        }
+
     // ---- Export / Import full settings backup ----
 
     suspend fun exportSettingsBackup(): String {
@@ -418,6 +512,9 @@ class TvPlayerViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        playerManager.release()
+        // playerManager is now owned by DkPlayerApplication (not this ViewModel), so it
+        // must survive this ViewModel being cleared — background playback and Cast
+        // sessions need to keep running independent of the Activity/ViewModel lifecycle.
+        // Do NOT release it here.
     }
 }
