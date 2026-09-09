@@ -57,6 +57,9 @@ android {
 dependencies {
     // Core & Lifecycle KTX
     implementation("androidx.core:core-ktx:1.13.1")
+    // Per-app language / locale picker (AppCompatDelegate.setApplicationLocales works app-wide
+    // since 1.6.0, even without AppCompatActivity — see AndroidManifest's AppLocalesMetadataHolderService).
+    implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.activity:activity-ktx:1.9.1")
     implementation("androidx.activity:activity-compose:1.9.1")
     // Explicit pin: some transitive dependency was resolving an old androidx.fragment
