@@ -25,8 +25,11 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -391,17 +394,17 @@ private fun DownloadStatusButton(
                 )
             }
             isCompleted -> Icon(
-                androidx.compose.material.icons.Icons.Default.DownloadDone,
+                Icons.Default.DownloadDone,
                 contentDescription = "Downloaded — tap to remove",
                 tint = MaterialTheme.colorScheme.primary
             )
             isFailed -> Icon(
-                androidx.compose.material.icons.Icons.Default.ErrorOutline,
+                Icons.Default.ErrorOutline,
                 contentDescription = "Download failed — tap to retry",
                 tint = MaterialTheme.colorScheme.error
             )
             else -> Icon(
-                androidx.compose.material.icons.Icons.Default.Download,
+                Icons.Default.Download,
                 contentDescription = "Download for offline playback"
             )
         }
