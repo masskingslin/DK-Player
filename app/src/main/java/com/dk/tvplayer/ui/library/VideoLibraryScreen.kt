@@ -338,7 +338,6 @@ fun SortMenuButton(current: SortOption, onSelected: (SortOption) -> Unit) {
 }
 
 @Composable
-@Composable
 fun LocalVideoCard(video: LocalVideoItem, showThumbnail: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier
