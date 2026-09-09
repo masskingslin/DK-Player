@@ -112,7 +112,8 @@ fun PhonePlayerScreen(
     val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1) }
 
     val uiState by viewModel.uiState.collectAsState()
-    val activePlayer by viewModel.playerManager.activePlayerFlow.collectAsState()    var showControls by remember { mutableStateOf(true) }
+    val activePlayer by viewModel.playerManager.activePlayerFlow.collectAsState()
+    var showControls by remember { mutableStateOf(true) }
     val isPlaying by viewModel.playerManager.isPlayingFlow.collectAsState()
     val currentPosition by viewModel.playerManager.currentPositionFlow.collectAsState()
     val duration by viewModel.playerManager.durationFlow.collectAsState()
