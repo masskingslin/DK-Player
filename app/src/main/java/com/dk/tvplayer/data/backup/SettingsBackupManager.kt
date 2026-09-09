@@ -1,10 +1,14 @@
 package com.dk.tvplayer.data.backup
 
 import com.dk.tvplayer.data.local.AppSettings
+import com.dk.tvplayer.data.local.AppLanguage
 import com.dk.tvplayer.data.local.AppThemeMode
 import com.dk.tvplayer.data.local.PlaylistItemEntity
 import com.dk.tvplayer.data.local.SortOption
 import com.dk.tvplayer.data.local.StreamEntity
+import com.dk.tvplayer.data.local.SubtitleColorPreset
+import com.dk.tvplayer.data.local.SubtitleTextSize
+import com.dk.tvplayer.data.local.VideoResolutionCap
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -40,6 +44,15 @@ object SettingsBackupManager {
             put("themeMode", bundle.settings.themeMode.name)
             put("themeSeedColor", bundle.settings.themeSeedColor)
             put("defaultPlaybackSpeed", bundle.settings.defaultPlaybackSpeed)
+            put("fastSeekEnabled", bundle.settings.fastSeekEnabled)
+            put("matchDisplayFrameRate", bundle.settings.matchDisplayFrameRate)
+            put("maxVideoResolution", bundle.settings.maxVideoResolution.name)
+            put("videoThumbnailsEnabled", bundle.settings.videoThumbnailsEnabled)
+            put("incognitoMode", bundle.settings.incognitoMode)
+            put("subtitleTextSize", bundle.settings.subtitleTextSize.name)
+            put("subtitleColor", bundle.settings.subtitleColor.name)
+            put("showListHeaders", bundle.settings.showListHeaders)
+            put("appLanguage", bundle.settings.appLanguage.name)
         }
         root.put("settings", settingsJson)
 
@@ -97,7 +110,24 @@ object SettingsBackupManager {
                 AppThemeMode.valueOf(settingsJson.optString("themeMode", AppThemeMode.DARK.name))
             }.getOrDefault(AppThemeMode.DARK),
             themeSeedColor = settingsJson.optLong("themeSeedColor", 0xFFB39DDB),
-            defaultPlaybackSpeed = settingsJson.optDouble("defaultPlaybackSpeed", 1.0).toFloat()
+            defaultPlaybackSpeed = settingsJson.optDouble("defaultPlaybackSpeed", 1.0).toFloat(),
+            fastSeekEnabled = settingsJson.optBoolean("fastSeekEnabled", false),
+            matchDisplayFrameRate = settingsJson.optBoolean("matchDisplayFrameRate", false),
+            maxVideoResolution = runCatching {
+                VideoResolutionCap.valueOf(settingsJson.optString("maxVideoResolution", VideoResolutionCap.BEST_AVAILABLE.name))
+            }.getOrDefault(VideoResolutionCap.BEST_AVAILABLE),
+            videoThumbnailsEnabled = settingsJson.optBoolean("videoThumbnailsEnabled", true),
+            incognitoMode = settingsJson.optBoolean("incognitoMode", false),
+            subtitleTextSize = runCatching {
+                SubtitleTextSize.valueOf(settingsJson.optString("subtitleTextSize", SubtitleTextSize.MEDIUM.name))
+            }.getOrDefault(SubtitleTextSize.MEDIUM),
+            subtitleColor = runCatching {
+                SubtitleColorPreset.valueOf(settingsJson.optString("subtitleColor", SubtitleColorPreset.WHITE.name))
+            }.getOrDefault(SubtitleColorPreset.WHITE),
+            showListHeaders = settingsJson.optBoolean("showListHeaders", true),
+            appLanguage = runCatching {
+                AppLanguage.valueOf(settingsJson.optString("appLanguage", AppLanguage.SYSTEM_DEFAULT.name))
+            }.getOrDefault(AppLanguage.SYSTEM_DEFAULT)
         )
 
         val streams = mutableListOf<StreamEntity>()
