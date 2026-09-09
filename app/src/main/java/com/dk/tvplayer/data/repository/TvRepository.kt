@@ -37,6 +37,10 @@ class TvRepository(
         epgDao.getProgramsForChannel(channelId, System.currentTimeMillis())
 
     fun getHistory(): Flow<List<HistoryEntity>> = historyDao.getRecentHistory()
+
+    suspend fun getHistoryEntryOnce(url: String): HistoryEntity? = withContext(Dispatchers.IO) {
+        historyDao.getByUrl(url)
+    }
     fun getCustomStreams(): Flow<List<StreamEntity>> = streamDao.getAllStreams()
 
     suspend fun insertCustomStream(name: String, url: String) = withContext(Dispatchers.IO) {
