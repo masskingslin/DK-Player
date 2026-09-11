@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -101,6 +102,7 @@ private enum class GestureZone { BRIGHTNESS, VOLUME, SCRUB, NONE }
 fun PhonePlayerScreen(
     mediaUrl: String,
     title: String,
+    isLive: Boolean,
     viewModel: TvPlayerViewModel,
     onBack: () -> Unit
 ) {
@@ -119,6 +121,7 @@ fun PhonePlayerScreen(
     val duration by viewModel.playerManager.durationFlow.collectAsState()
     val playbackSpeed by viewModel.playerManager.playbackSpeedFlow.collectAsState()
     val playbackError by viewModel.playerManager.playbackErrorFlow.collectAsState()
+    val isBuffering by viewModel.playerManager.isBufferingFlow.collectAsState()
     val isCastAvailable by viewModel.playerManager.isCastAvailableFlow.collectAsState()
     val isCasting by viewModel.playerManager.isCastingFlow.collectAsState()
     val sleepTimerRemaining by viewModel.playerManager.sleepTimerRemainingSecFlow.collectAsState()
@@ -365,6 +368,16 @@ fun PhonePlayerScreen(
             },
             modifier = Modifier.fillMaxSize()
         )
+
+        // Visible feedback while the player is buffering (e.g. loading a large offline
+        // download, or waiting on a slow network) — without this, a long stall just
+        // looked like a frozen black screen with no indication anything was happening.
+        if (isBuffering) {
+            CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.Center),
+                color = Color.White
+            )
+        }
 
         // Applies the persisted subtitle size/color preference to the caption view
         // whenever the player view is (re)created or the settings change.
@@ -623,7 +636,11 @@ fun PhonePlayerScreen(
                             style = MaterialTheme.typography.bodySmall
                         )
                         Text(
-                            text = if (duration > 0) formatTime(duration) else "LIVE",
+                            text = when {
+                                duration > 0 -> formatTime(duration)
+                                isLive -> "LIVE"
+                                else -> "--:--" // VOD/local file whose duration just hasn't loaded yet — never "LIVE"
+                            },
                             color = Color.White,
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -643,7 +660,14 @@ fun PhonePlayerScreen(
                             valueRange = 0f..duration.toFloat(),
                             modifier = Modifier.fillMaxWidth()
                         )
+                    } else if (isLive) {
+                        // Live streams have no meaningful duration/seek bar — just show
+                        // that the transport is active without implying a scrubbable timeline.
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     } else {
+                        // Duration just hasn't loaded yet for this file — same generic
+                        // "in progress" affordance, but the label above already reads
+                        // "--:--" instead of "LIVE" so it isn't mistaken for a live stream.
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     }
                 }
