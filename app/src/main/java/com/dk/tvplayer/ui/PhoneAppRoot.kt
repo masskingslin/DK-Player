@@ -66,10 +66,10 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
         currentRoute == "downloads" ||
         currentRoute?.startsWith("playlist_detail") == true
 
-    fun navigateToPlayer(url: String, title: String) {
+    fun navigateToPlayer(url: String, title: String, isLive: Boolean = false) {
         val encodedUrl = URLEncoder.encode(url, StandardCharsets.UTF_8.toString())
         val encodedTitle = URLEncoder.encode(title, StandardCharsets.UTF_8.toString())
-        navController.navigate("player/$encodedUrl/$encodedTitle")
+        navController.navigate("player/$encodedUrl/$encodedTitle/$isLive")
     }
 
     Scaffold(
@@ -110,7 +110,7 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
             composable(Screen.Home.route) {
                 HomeHubScreen(
                     viewModel = viewModel,
-                    onPlayMedia = { url, title -> navigateToPlayer(url, title) },
+                    onPlayMedia = { url, title, isLive -> navigateToPlayer(url, title, isLive) },
                     onOpenDownloads = { navController.navigate("downloads") },
                     onOpenPlaylists = {
                         navController.navigate(Screen.Playlists.route) {
@@ -125,14 +125,15 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
             composable(Screen.Library.route) {
                 VideoLibraryScreen(
                     viewModel = viewModel,
-                    onPlayVideo = { url, title -> navigateToPlayer(url, title) }
+                    onPlayVideo = { url, title, isLive -> navigateToPlayer(url, title, isLive) }
                 )
             }
 
             composable(Screen.Audio.route) {
                 AudioLibraryScreen(
                     viewModel = viewModel,
-                    onPlayAudio = { filePath, title -> navigateToPlayer(filePath, title) }
+                    // Local audio files are never "live".
+                    onPlayAudio = { filePath, title -> navigateToPlayer(filePath, title, isLive = false) }
                 )
             }
 
@@ -167,27 +168,31 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
                     PlaylistDetailScreen(
                         playlist = playlist,
                         viewModel = viewModel,
-                        onPlayItem = { url, title -> navigateToPlayer(url, title) },
+                        // Playlist items are user-curated saved media, not live channels.
+                        onPlayItem = { url, title -> navigateToPlayer(url, title, isLive = false) },
                         onBack = { navController.popBackStack() }
                     )
                 }
             }
 
             composable(
-                route = "player/{mediaUrl}/{title}",
+                route = "player/{mediaUrl}/{title}/{isLive}",
                 arguments = listOf(
                     navArgument("mediaUrl") { type = NavType.StringType },
-                    navArgument("title") { type = NavType.StringType }
+                    navArgument("title") { type = NavType.StringType },
+                    navArgument("isLive") { type = NavType.BoolType }
                 )
             ) { backStackEntry ->
                 val rawUrl = backStackEntry.arguments?.getString("mediaUrl").orEmpty()
                 val rawTitle = backStackEntry.arguments?.getString("title").orEmpty()
                 val mediaUrl = URLDecoder.decode(rawUrl, StandardCharsets.UTF_8.toString())
                 val title = URLDecoder.decode(rawTitle, StandardCharsets.UTF_8.toString())
+                val isLive = backStackEntry.arguments?.getBoolean("isLive") ?: false
 
                 PhonePlayerScreen(
                     mediaUrl = mediaUrl,
                     title = title,
+                    isLive = isLive,
                     viewModel = viewModel,
                     onBack = { navController.popBackStack() }
                 )
