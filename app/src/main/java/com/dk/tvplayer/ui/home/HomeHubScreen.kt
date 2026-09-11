@@ -61,7 +61,7 @@ import com.dk.tvplayer.ui.TvPlayerViewModel
 @Composable
 fun HomeHubScreen(
     viewModel: TvPlayerViewModel,
-    onPlayMedia: (url: String, title: String) -> Unit,
+    onPlayMedia: (url: String, title: String, isLive: Boolean) -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenPlaylists: () -> Unit
 ) {
@@ -121,7 +121,7 @@ fun HomeHubScreen(
                         items(state.history, key = { it.mediaUrl }) { historyItem ->
                             HistoryCard(
                                 history = historyItem,
-                                onClick = { onPlayMedia(historyItem.mediaUrl, historyItem.title) }
+                                onClick = { onPlayMedia(historyItem.mediaUrl, historyItem.title, false) }
                             )
                         }
                     }
@@ -138,7 +138,7 @@ fun HomeHubScreen(
                                 channel = channel,
                                 onClick = {
                                     viewModel.selectChannel(channel)
-                                    onPlayMedia(channel.streamUrl, channel.name)
+                                    onPlayMedia(channel.streamUrl, channel.name, true)
                                 }
                             )
                         }
@@ -173,7 +173,7 @@ fun HomeHubScreen(
                 items(state.customStreams, key = { it.id }) { stream ->
                     StreamRowItem(
                         stream = stream,
-                        onPlay = { onPlayMedia(stream.streamUrl, stream.name) },
+                        onPlay = { onPlayMedia(stream.streamUrl, stream.name, false) },
                         onDelete = { viewModel.deleteCustomStream(stream) }
                     )
                 }
