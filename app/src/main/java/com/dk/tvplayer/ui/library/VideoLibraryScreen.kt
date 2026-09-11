@@ -66,7 +66,7 @@ import java.util.concurrent.TimeUnit
 @Composable
 fun VideoLibraryScreen(
     viewModel: TvPlayerViewModel,
-    onPlayVideo: (url: String, title: String) -> Unit
+    onPlayVideo: (url: String, title: String, isLive: Boolean) -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Local Videos", "IPTV Channels")
@@ -174,7 +174,7 @@ fun VideoLibraryScreen(
                                 LocalVideoCard(
                                     video = video,
                                     showThumbnail = state.appSettings.videoThumbnailsEnabled,
-                                    onClick = { onPlayVideo(video.filePath, video.name) },
+                                    onClick = { onPlayVideo(video.filePath, video.name, false) },
                                     modifier = Modifier.animateItem()
                                 )
                             }
@@ -184,7 +184,7 @@ fun VideoLibraryScreen(
                             LocalVideoCard(
                                 video = video,
                                 showThumbnail = state.appSettings.videoThumbnailsEnabled,
-                                onClick = { onPlayVideo(video.filePath, video.name) },
+                                onClick = { onPlayVideo(video.filePath, video.name, false) },
                                 modifier = Modifier.animateItem()
                             )
                         }
@@ -286,7 +286,7 @@ fun VideoLibraryScreen(
                                         onToggleFavorite = { viewModel.toggleFavorite(channel.channelId) },
                                         onClick = {
                                             viewModel.selectChannel(channel)
-                                            onPlayVideo(channel.streamUrl, channel.name)
+                                            onPlayVideo(channel.streamUrl, channel.name, true)
                                         },
                                         modifier = Modifier.animateItem()
                                     )
@@ -301,7 +301,7 @@ fun VideoLibraryScreen(
                                     modifier = Modifier.animateItem(),
                                     onClick = {
                                         viewModel.selectChannel(channel)
-                                        onPlayVideo(channel.streamUrl, channel.name)
+                                        onPlayVideo(channel.streamUrl, channel.name, true)
                                     }
                                 )
                             }
