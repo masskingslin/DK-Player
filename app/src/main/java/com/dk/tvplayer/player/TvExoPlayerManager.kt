@@ -122,6 +122,9 @@ class TvExoPlayerManager(
     private val _playbackError = MutableStateFlow<String?>(null)
     val playbackErrorFlow: StateFlow<String?> = _playbackError.asStateFlow()
 
+    private val _isBufferingFlow = MutableStateFlow(false)
+    val isBufferingFlow: StateFlow<Boolean> = _isBufferingFlow.asStateFlow()
+
     private val _isCastAvailable = MutableStateFlow(false)
     val isCastAvailableFlow: StateFlow<Boolean> = _isCastAvailable.asStateFlow()
 
@@ -185,6 +188,7 @@ class TvExoPlayerManager(
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (_activePlayer.value === player) {
+                    _isBufferingFlow.value = playbackState == Player.STATE_BUFFERING
                     if (playbackState == Player.STATE_READY) {
                         _durationFlow.value = player.duration.coerceAtLeast(0L)
                         retryAttempt = 0
