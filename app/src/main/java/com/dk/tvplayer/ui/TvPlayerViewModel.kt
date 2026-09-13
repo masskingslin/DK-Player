@@ -21,11 +21,16 @@ import com.dk.tvplayer.data.local.VideoResolutionCap
 import com.dk.tvplayer.data.parser.PlaylistExporter
 import com.dk.tvplayer.data.repository.TvRepository
 import com.dk.tvplayer.player.TvExoPlayerManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.IOException
 import java.io.InputStream
 
 class TvPlayerViewModel(
@@ -276,6 +281,34 @@ class TvPlayerViewModel(
 
     fun importM3u(inputStream: InputStream) {
         viewModelScope.launch { repository.loadM3u(inputStream) }
+    }
+
+    /**
+     * Loads an IPTV channel list from a remote M3U playlist URL (e.g. the iptv-org
+     * index.m3u) directly over the network, parses it, and replaces the IPTV Channels
+     * tab's contents with the parsed channels. This is distinct from playing a URL —
+     * an M3U playlist is a text file listing many channels, not a single playable
+     * stream, so it must go through the parser rather than the player.
+     */
+    fun importM3uFromUrl(url: String, onComplete: (success: Boolean, errorMessage: String?) -> Unit) {
+        viewModelScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val client = OkHttpClient()
+                    val request = Request.Builder().url(url).build()
+                    client.newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) {
+                            throw IOException("Server returned HTTP ${response.code}")
+                        }
+                        val body = response.body ?: throw IOException("Empty response from server")
+                        body.byteStream().use { stream ->
+                            repository.loadM3u(stream)
+                        }
+                    }
+                }
+            }
+            onComplete(result.isSuccess, result.exceptionOrNull()?.message)
+        }
     }
 
     // ---- Playlist management ----
