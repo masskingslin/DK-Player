@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Search
@@ -30,16 +31,19 @@ import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -192,6 +196,15 @@ fun VideoLibraryScreen(
                 }
             }
         } else {
+            var showLoadPlaylistDialog by remember { mutableStateOf(false) }
+
+            if (showLoadPlaylistDialog) {
+                LoadPlaylistDialog(
+                    viewModel = viewModel,
+                    onDismiss = { showLoadPlaylistDialog = false }
+                )
+            }
+
             Column(modifier = Modifier.fillMaxSize()) {
                 // Search bar + sort
                 Row(
@@ -209,6 +222,9 @@ fun VideoLibraryScreen(
                         singleLine = true
                     )
                     Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(onClick = { showLoadPlaylistDialog = true }) {
+                        Icon(Icons.Default.Add, contentDescription = "Load IPTV playlist from URL")
+                    }
                     SortMenuButton(current = state.sortOption, onSelected = { viewModel.setSortOption(it) })
                 }
 
@@ -250,10 +266,23 @@ fun VideoLibraryScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        Text(
-                            text = "No channels match your filters",
-                            style = MaterialTheme.typography.titleMedium
-                        )
+                        if (state.channels.isEmpty()) {
+                            Text(
+                                text = "No IPTV playlist loaded yet",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Tap the + button above and paste an M3U playlist URL to load channels.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Text(
+                                text = "No channels match your filters",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
                     }
                 } else {
                     LazyVerticalGrid(
@@ -311,6 +340,69 @@ fun VideoLibraryScreen(
             }
         }
     }
+}
+
+@Composable
+fun LoadPlaylistDialog(viewModel: TvPlayerViewModel, onDismiss: () -> Unit) {
+    var url by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = { if (!isLoading) onDismiss() },
+        title = { Text("Load IPTV Playlist") },
+        text = {
+            Column {
+                Text(
+                    "Paste a direct M3U playlist URL. This replaces the current IPTV " +
+                        "Channels list with the channels found in it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it; errorMessage = null },
+                    placeholder = { Text("https://example.com/playlist.m3u") },
+                    singleLine = true,
+                    enabled = !isLoading,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (isLoading) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+                errorMessage?.let { error ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Couldn't load playlist: $error",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    isLoading = true
+                    errorMessage = null
+                    viewModel.importM3uFromUrl(url.trim()) { success, error ->
+                        isLoading = false
+                        if (success) {
+                            onDismiss()
+                        } else {
+                            errorMessage = error ?: "Unknown error"
+                        }
+                    }
+                },
+                enabled = url.isNotBlank() && !isLoading
+            ) { Text("Load") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isLoading) { Text("Cancel") }
+        }
+    )
 }
 
 @Composable
