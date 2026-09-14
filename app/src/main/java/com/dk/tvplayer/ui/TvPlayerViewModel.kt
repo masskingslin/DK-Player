@@ -32,12 +32,30 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
 import java.io.InputStream
+import java.util.concurrent.TimeUnit
 
 class TvPlayerViewModel(
     private val repository: TvRepository,
     val playerManager: TvExoPlayerManager,
     private val settingsDataStore: SettingsDataStore
 ) : ViewModel() {
+
+    companion object {
+        // OkHttpClient()'s defaults (10s connect/read/write) are tuned for small API
+        // responses, not for downloading a whole playlist file. Public IPTV indexes
+        // like iptv-org's index.m3u list 10,000+ channels and can be several MB, so on
+        // an average mobile connection the download alone can take well past 10
+        // seconds — the request was timing out and surfacing as "the link doesn't
+        // work" (or, before importM3uFromUrl wrapped this in runCatching, as a crash).
+        // A single shared client (rather than `OkHttpClient()` per call) also avoids
+        // spinning up a fresh thread/connection pool on every import attempt.
+        private val playlistHttpClient: OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .callTimeout(120, TimeUnit.SECONDS)
+            .build()
+    }
 
     private val _uiState = MutableStateFlow(TvUiState())
     val uiState: StateFlow<TvUiState> = _uiState.asStateFlow()
@@ -294,9 +312,11 @@ class TvPlayerViewModel(
         viewModelScope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) {
-                    val client = OkHttpClient()
-                    val request = Request.Builder().url(url).build()
-                    client.newCall(request).execute().use { response ->
+                    val request = Request.Builder()
+                        .url(url)
+                        .header("User-Agent", "DK-Player/2.0")
+                        .build()
+                    playlistHttpClient.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
                             throw IOException("Server returned HTTP ${response.code}")
                         }
