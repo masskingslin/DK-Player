@@ -14,6 +14,15 @@ data class M3uEntry(
 
 object M3uParser {
 
+    // Precompiled once and reused for every line, instead of calling Pattern.compile()
+    // per attribute per line. Large public playlists (e.g. iptv-org's index.m3u, which
+    // lists 10,000+ channels) mean 40,000+ attribute lookups per import — recompiling
+    // the same 4 regexes that many times was needlessly slow and GC-heavy, and could
+    // make an import of a big playlist feel like it had hung or crashed.
+    private val ATTRIBUTE_PATTERNS: Map<String, Pattern> = listOf(
+        "tvg-id", "tvg-name", "tvg-logo", "group-title"
+    ).associateWith { attrName -> Pattern.compile("$attrName=\"([^\"]*)\"") }
+
     /** Generic parse used for playlist imports (Playlists tab) and other non-channel uses. */
     fun parseEntries(inputStream: InputStream): List<M3uEntry> {
         val entries = mutableListOf<M3uEntry>()
@@ -109,7 +118,7 @@ object M3uParser {
     }
 
     private fun extractAttribute(line: String, attrName: String): String? {
-        val pattern = Pattern.compile("$attrName=\"([^\"]*)\"")
+        val pattern = ATTRIBUTE_PATTERNS.getValue(attrName)
         val matcher = pattern.matcher(line)
         return if (matcher.find()) matcher.group(1) else null
     }
