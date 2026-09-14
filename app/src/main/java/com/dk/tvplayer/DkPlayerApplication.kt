@@ -34,9 +34,14 @@ class DkPlayerApplication : Application() {
         settingsDataStore = SettingsDataStore(this)
         // Hardware acceleration is baked into the player at construction time (see
         // TvExoPlayerManager's doc comment), so this one settings read has to happen
-        // synchronously before the player is built. It resolves instantly against the
-        // DataStore's cached/default value, so this isn't a meaningful startup cost.
-        val hwAccel = runBlocking { settingsDataStore.settingsFlow.first().hwAcceleration }
+        // synchronously before the player is built. It normally resolves instantly
+        // against the DataStore's cached/default value, but it's still disk I/O on the
+        // main thread during app startup — if the preferences file is slow to open or
+        // fails to read for any reason, this must never be allowed to crash or hang
+        // app launch, so it falls back to the safe default (hardware acceleration on).
+        val hwAccel = runCatching {
+            runBlocking { settingsDataStore.settingsFlow.first().hwAcceleration }
+        }.getOrDefault(true)
         downloadManagerHolder = DownloadManagerHolder(this)
         playerManager = TvExoPlayerManager(
             this,
