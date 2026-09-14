@@ -1,14 +1,27 @@
 package com.dk.tvplayer.data.local
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.dataStore by preferencesDataStore(name = "dk_player_settings")
+// A corruptionHandler is required here: without one, any damaged/partially-written
+// preferences file (e.g. the device losing power or the app being killed mid-write
+// while the user was toggling a setting, such as picking a theme colour) makes every
+// future read of settingsFlow throw a CorruptionException instead of returning data.
+// Since settingsFlow is read from Application.onCreate() via a blocking call, an
+// uncaught exception there crashes the app on every single launch (a "crash loop")
+// until the user manually clears app data. Falling back to emptyPreferences() instead
+// means a corrupted file just resets settings to their defaults rather than crashing.
+private val Context.dataStore by preferencesDataStore(
+    name = "dk_player_settings",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() }
+)
 
 enum class SortOption(val label: String) {
     NAME_ASC("Name (A-Z)"),
