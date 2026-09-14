@@ -142,6 +142,15 @@ class TvExoPlayerManager(
     private var lastPlayedUrl: String? = null
     private var lastPlayedTitle: String? = null
     private var retryAttempt = 0
+    // Many real-world IPTV stream URLs (especially Xtream-Codes-style links) have no
+    // file extension at all, so ExoPlayer's default container sniffing can't tell it's
+    // HLS and fails with "parsing container unsupported". Since that failure is
+    // deterministic — retrying the exact same MediaItem will fail the exact same way
+    // every time — one retry attempt forces the MIME type to HLS instead of blindly
+    // repeating the request. If the stream genuinely isn't HLS either, we stop
+    // retrying immediately rather than wasting the usual backoff attempts on an error
+    // that network conditions can't fix.
+    private var forcedHlsRetry = false
     private var backgroundPlaybackEnabled = false
 
     /** Wraps localPlayer so PlaybackService (and, if ever needed, other controllers) can
@@ -219,18 +228,22 @@ class TvExoPlayerManager(
 
     // ---- Playback ----
 
-    fun play(url: String, startPositionMs: Long = 0L, title: String? = null) {
+    fun play(url: String, startPositionMs: Long = 0L, title: String? = null, forceHlsMimeType: Boolean = false) {
         lastPlayedUrl = url
         lastPlayedTitle = title ?: lastPlayedTitle
         retryAttempt = 0
+        forcedHlsRetry = forceHlsMimeType
         _playbackError.value = null
         retryJob?.cancel()
 
         val target = _activePlayer.value
-        val mediaItem = MediaItem.Builder()
+        val mediaItemBuilder = MediaItem.Builder()
             .setUri(url)
             .setMediaMetadata(MediaMetadata.Builder().setTitle(lastPlayedTitle ?: "").build())
-            .build()
+        if (forceHlsMimeType) {
+            mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
+        }
+        val mediaItem = mediaItemBuilder.build()
         target.setMediaItem(mediaItem)
         if (startPositionMs > 0L) {
             target.seekTo(startPositionMs)
@@ -289,6 +302,31 @@ class TvExoPlayerManager(
 
     private fun handlePlaybackError(error: PlaybackException) {
         _playbackError.value = friendlyErrorMessage(error)
+
+        val isContainerParsingError = when (error.errorCode) {
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+            PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+            PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED -> true
+            else -> false
+        }
+
+        if (isContainerParsingError) {
+            // Deterministic failure — retrying the same request would just fail the
+            // same way again. Try exactly once more, forcing HLS (the common case for
+            // extension-less IPTV URLs); if we already tried that, give up immediately
+            // instead of burning through the normal backoff retries.
+            if (!forcedHlsRetry) {
+                retryJob?.cancel()
+                retryJob = scope.launch {
+                    val url = lastPlayedUrl ?: return@launch
+                    val position = _activePlayer.value.currentPosition
+                    play(url, position, lastPlayedTitle, forceHlsMimeType = true)
+                }
+            }
+            return
+        }
+
         if (retryAttempt < MAX_RETRY_ATTEMPTS) {
             val delayMs = 1000L * (1 shl retryAttempt)
             retryAttempt++
