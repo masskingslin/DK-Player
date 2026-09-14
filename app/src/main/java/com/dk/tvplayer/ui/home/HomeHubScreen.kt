@@ -51,6 +51,7 @@ import com.dk.tvplayer.data.local.HistoryEntity
 import com.dk.tvplayer.data.local.StreamEntity
 import com.dk.tvplayer.data.local.TvChannelEntity
 import com.dk.tvplayer.ui.TvPlayerViewModel
+import kotlinx.coroutines.launch
 
 /**
  * The app's primary landing tab: continue watching, quick actions, favorite channels,
@@ -67,6 +68,8 @@ fun HomeHubScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     var showDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
 
     if (showDialog) {
         NewStreamDialog(
@@ -74,6 +77,20 @@ fun HomeHubScreen(
             onConfirm = { name, url ->
                 viewModel.addCustomStream(name, url)
                 showDialog = false
+            },
+            onLoadAsPlaylist = { url ->
+                showDialog = false
+                viewModel.importM3uFromUrl(url) { success, error ->
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar(
+                            if (success) {
+                                "Playlist loaded — check Videos → IPTV Channels"
+                            } else {
+                                "Couldn't load playlist: ${error ?: "Unknown error"}"
+                            }
+                        )
+                    }
+                }
             }
         )
     }
@@ -83,6 +100,7 @@ fun HomeHubScreen(
     }
 
     Scaffold(
+        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showDialog = true },
