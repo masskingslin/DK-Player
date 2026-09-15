@@ -151,7 +151,7 @@ fun HomeHubScreen(
                     SectionHeader("Favorite Channels")
                     Spacer(modifier = Modifier.height(12.dp))
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(favoriteChannels, key = { it.channelId }) { channel ->
+                        items(favoriteChannels, key = { it.id }) { channel ->
                             FavoriteChannelCard(
                                 channel = channel,
                                 onClick = {
