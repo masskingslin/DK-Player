@@ -25,6 +25,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -32,7 +35,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
 import java.io.InputStream
-import java.util.concurrent.TimeUnit
 
 class TvPlayerViewModel(
     private val repository: TvRepository,
@@ -40,46 +42,31 @@ class TvPlayerViewModel(
     private val settingsDataStore: SettingsDataStore
 ) : ViewModel() {
 
-    companion object {
-        // OkHttpClient()'s defaults (10s connect/read/write) are tuned for small API
-        // responses, not for downloading a whole playlist file. Public IPTV indexes
-        // like iptv-org's index.m3u list 10,000+ channels and can be several MB, so on
-        // an average mobile connection the download alone can take well past 10
-        // seconds — the request was timing out and surfacing as "the link doesn't
-        // work" (or, before importM3uFromUrl wrapped this in runCatching, as a crash).
-        // A single shared client (rather than `OkHttpClient()` per call) also avoids
-        // spinning up a fresh thread/connection pool on every import attempt.
-        private val playlistHttpClient: OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .callTimeout(120, TimeUnit.SECONDS)
-            .build()
-    }
-
     private val _uiState = MutableStateFlow(TvUiState())
     val uiState: StateFlow<TvUiState> = _uiState.asStateFlow()
 
+    // Raw filter inputs, separate from _uiState, so the search box can update instantly
+    // on every keystroke (bound to _uiState.searchQuery) while the actual filtering —
+    // expensive once a playlist has tens of thousands of channels — runs debounced and
+    // off the main thread. Without this split, either the text field lags behind what
+    // you type, or every keystroke re-filters/re-sorts the full channel list inline.
+    private val _channelsInput = MutableStateFlow<List<TvChannelEntity>>(emptyList())
+    private val _categoryInput = MutableStateFlow("All")
+    private val _searchQueryInput = MutableStateFlow("")
+    private val _favoriteIdsInput = MutableStateFlow<Set<String>>(emptySet())
+    private val _showFavoritesOnlyInput = MutableStateFlow(false)
+    private val _sortOptionInput = MutableStateFlow(SortOption.NAME_ASC)
+
     init {
         observeData()
+        observeChannelFiltering()
     }
 
     private fun observeData() {
         viewModelScope.launch {
             repository.getAllChannels().collect { list ->
-                _uiState.update { current ->
-                    current.copy(
-                        channels = list,
-                        filteredChannels = filterAndSortChannels(
-                            list,
-                            current.selectedCategory,
-                            current.searchQuery,
-                            current.favoriteChannelIds,
-                            current.showFavoritesOnly,
-                            current.sortOption
-                        )
-                    )
-                }
+                _channelsInput.value = list
+                _uiState.update { it.copy(channels = list) }
             }
         }
 
@@ -110,6 +97,7 @@ class TvPlayerViewModel(
         viewModelScope.launch {
             settingsDataStore.settingsFlow.collect { settings ->
                 _uiState.update { it.copy(sortOption = settings.sortOption, appSettings = settings) }
+                _sortOptionInput.value = settings.sortOption
                 // Keep the live player in sync with settings that can change at runtime
                 // (hardware acceleration is the one exception — see TvExoPlayerManager).
                 playerManager.setPlaybackSpeed(settings.defaultPlaybackSpeed)
@@ -121,70 +109,78 @@ class TvPlayerViewModel(
         }
     }
 
-    // ---- Search / filter / sort ----
-
-    fun selectCategory(category: String) {
-        _uiState.update { current ->
-            current.copy(
-                selectedCategory = category,
-                filteredChannels = filterAndSortChannels(
-                    current.channels, category, current.searchQuery,
-                    current.favoriteChannelIds, current.showFavoritesOnly, current.sortOption
-                )
-            )
+    /**
+     * Reactive channel filter/sort pipeline. Debounces the search query (so typing
+     * doesn't re-filter on every keystroke) and runs the actual filter+sort work on
+     * Dispatchers.Default (background) rather than inline on whatever thread called a
+     * setter — both of which matter once a loaded playlist has tens of thousands of
+     * channels rather than a few hundred.
+     */
+    private fun observeChannelFiltering() {
+        viewModelScope.launch {
+            combine(
+                _channelsInput,
+                _categoryInput,
+                _searchQueryInput.debounce(250),
+                _favoriteIdsInput,
+                _showFavoritesOnlyInput
+            ) { channels, category, query, favoriteIds, showFavoritesOnly ->
+                ChannelFilterInputs(channels, category, query, favoriteIds, showFavoritesOnly, _sortOptionInput.value)
+            }.combine(_sortOptionInput) { inputs, sortOption ->
+                inputs.copy(sortOption = sortOption)
+            }.distinctUntilChanged().collect { inputs ->
+                val result = withContext(Dispatchers.Default) {
+                    filterAndSortChannels(
+                        inputs.channels, inputs.category, inputs.query,
+                        inputs.favoriteIds, inputs.showFavoritesOnly, inputs.sortOption
+                    )
+                }
+                _uiState.update { it.copy(filteredChannels = result) }
+            }
         }
     }
 
+    private data class ChannelFilterInputs(
+        val channels: List<TvChannelEntity>,
+        val category: String,
+        val query: String,
+        val favoriteIds: Set<String>,
+        val showFavoritesOnly: Boolean,
+        val sortOption: SortOption
+    )
+
+    // ---- Search / filter / sort ----
+
+    fun selectCategory(category: String) {
+        _uiState.update { it.copy(selectedCategory = category) }
+        _categoryInput.value = category
+    }
+
     fun updateSearchQuery(query: String) {
-        _uiState.update { current ->
-            current.copy(
-                searchQuery = query,
-                filteredChannels = filterAndSortChannels(
-                    current.channels, current.selectedCategory, query,
-                    current.favoriteChannelIds, current.showFavoritesOnly, current.sortOption
-                )
-            )
-        }
+        // Updates the visible text field immediately; the expensive filtering that
+        // results from it is debounced separately in observeChannelFiltering().
+        _uiState.update { it.copy(searchQuery = query) }
+        _searchQueryInput.value = query
     }
 
     fun setSortOption(option: SortOption) {
         viewModelScope.launch { settingsDataStore.setSortOption(option) }
-        _uiState.update { current ->
-            current.copy(
-                sortOption = option,
-                filteredChannels = filterAndSortChannels(
-                    current.channels, current.selectedCategory, current.searchQuery,
-                    current.favoriteChannelIds, current.showFavoritesOnly, option
-                )
-            )
-        }
+        _uiState.update { it.copy(sortOption = option) }
+        _sortOptionInput.value = option
     }
 
     fun toggleFavorite(channelId: String) {
         _uiState.update { current ->
             val updated = current.favoriteChannelIds.toMutableSet()
             if (!updated.add(channelId)) updated.remove(channelId)
-            current.copy(
-                favoriteChannelIds = updated,
-                filteredChannels = filterAndSortChannels(
-                    current.channels, current.selectedCategory, current.searchQuery,
-                    updated, current.showFavoritesOnly, current.sortOption
-                )
-            )
+            current.copy(favoriteChannelIds = updated)
         }
+        _favoriteIdsInput.value = _uiState.value.favoriteChannelIds
     }
 
     fun toggleShowFavoritesOnly() {
-        _uiState.update { current ->
-            val newValue = !current.showFavoritesOnly
-            current.copy(
-                showFavoritesOnly = newValue,
-                filteredChannels = filterAndSortChannels(
-                    current.channels, current.selectedCategory, current.searchQuery,
-                    current.favoriteChannelIds, newValue, current.sortOption
-                )
-            )
-        }
+        _uiState.update { it.copy(showFavoritesOnly = !it.showFavoritesOnly) }
+        _showFavoritesOnlyInput.value = _uiState.value.showFavoritesOnly
     }
 
     private fun filterAndSortChannels(
@@ -312,11 +308,18 @@ class TvPlayerViewModel(
         viewModelScope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) {
-                    val request = Request.Builder()
-                        .url(url)
-                        .header("User-Agent", "DK-Player/2.0")
+                    // Default OkHttp timeouts (10s) are tuned for typical API responses, not
+                    // multi-megabyte playlist files (a 15k-40k channel M3U can be several MB
+                    // of text) on a slow or throttled mobile connection — a generous timeout
+                    // here is what actually lets large playlists finish downloading instead
+                    // of failing partway through.
+                    val client = OkHttpClient.Builder()
+                        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                        .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+                        .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                         .build()
-                    playlistHttpClient.newCall(request).execute().use { response ->
+                    val request = Request.Builder().url(url).build()
+                    client.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
                             throw IOException("Server returned HTTP ${response.code}")
                         }
