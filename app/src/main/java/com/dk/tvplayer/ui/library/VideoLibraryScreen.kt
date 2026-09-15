@@ -229,6 +229,20 @@ fun VideoLibraryScreen(
                 }
 
                 // Category + Favorites filter row
+                var showCategoryPicker by remember { mutableStateOf(false) }
+
+                if (showCategoryPicker) {
+                    CategoryPickerDialog(
+                        categories = state.categories,
+                        selected = state.selectedCategory,
+                        onSelect = {
+                            viewModel.selectCategory(it)
+                            showCategoryPicker = false
+                        },
+                        onDismiss = { showCategoryPicker = false }
+                    )
+                }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -247,13 +261,15 @@ fun VideoLibraryScreen(
                             )
                         }
                     )
-                    state.categories.forEach { category ->
-                        FilterChip(
-                            selected = state.selectedCategory == category,
-                            onClick = { viewModel.selectCategory(category) },
-                            label = { Text(category) }
-                        )
-                    }
+                    // A plain chip row doesn't scale — a large combined IPTV playlist can
+                    // easily have 100+ categories, most of which would be permanently
+                    // off-screen and unreachable in a non-scrolling Row. A single button
+                    // opening a searchable picker works regardless of category count.
+                    FilterChip(
+                        selected = state.selectedCategory != "All",
+                        onClick = { showCategoryPicker = true },
+                        label = { Text(if (state.selectedCategory == "All") "Category" else state.selectedCategory) }
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -308,7 +324,7 @@ fun VideoLibraryScreen(
                                         modifier = Modifier.padding(vertical = 4.dp)
                                     )
                                 }
-                                items(groupItems, key = { it.channelId }) { channel ->
+                                items(groupItems, key = { it.id }) { channel ->
                                     IptvChannelCard(
                                         channel = channel,
                                         isFavorite = state.favoriteChannelIds.contains(channel.channelId),
@@ -322,7 +338,7 @@ fun VideoLibraryScreen(
                                 }
                             }
                         } else {
-                            items(state.filteredChannels, key = { it.channelId }) { channel ->
+                            items(state.filteredChannels, key = { it.id }) { channel ->
                                 IptvChannelCard(
                                     channel = channel,
                                     isFavorite = state.favoriteChannelIds.contains(channel.channelId),
@@ -340,6 +356,66 @@ fun VideoLibraryScreen(
             }
         }
     }
+}
+
+@Composable
+fun CategoryPickerDialog(
+    categories: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var query by remember { mutableStateOf("") }
+    val filtered = remember(categories, query) {
+        if (query.isBlank()) {
+            categories
+        } else {
+            categories.filter { it.contains(query, ignoreCase = true) }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Select Category") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = { Text("Search categories...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                // LazyColumn keeps this responsive even with hundreds of categories,
+                // unlike composing every chip into a plain (non-virtualized) Row.
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier.height(360.dp)
+                ) {
+                    items(filtered, key = { it }) { category ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelect(category) }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (category == selected) {
+                                Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.width(8.dp))
+                            } else {
+                                Spacer(modifier = Modifier.width(32.dp))
+                            }
+                            Text(category, style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
 }
 
 @Composable
