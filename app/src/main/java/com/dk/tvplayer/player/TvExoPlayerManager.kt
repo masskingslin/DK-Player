@@ -14,6 +14,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -22,6 +23,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.session.MediaSession
 import androidx.core.content.ContextCompat
+import com.dk.tvplayer.data.parser.M3uParser
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
@@ -228,7 +230,23 @@ class TvExoPlayerManager(
 
     // ---- Playback ----
 
-    fun play(url: String, startPositionMs: Long = 0L, title: String? = null, forceHlsMimeType: Boolean = false) {
+    /**
+     * @param userAgent Per-stream User-Agent override (e.g. from an M3U's #EXTVLCOPT or
+     * piped-URL directive — see [M3uParser]). Falls back to a generic browser-like UA,
+     * matching VLC's behaviour of always sending *some* recognizable User-Agent rather
+     * than none, which some CDNs reject outright.
+     * @param referrer Per-stream Referer override, same source. Many channels in large
+     * aggregated playlists (e.g. iptv-org's index.m3u) are hosted behind CDNs that 403
+     * requests missing this — VLC/Kodi apply it per-channel, so we do too.
+     */
+    fun play(
+        url: String,
+        startPositionMs: Long = 0L,
+        title: String? = null,
+        forceHlsMimeType: Boolean = false,
+        userAgent: String? = null,
+        referrer: String? = null
+    ) {
         lastPlayedUrl = url
         lastPlayedTitle = title ?: lastPlayedTitle
         retryAttempt = 0
@@ -244,7 +262,31 @@ class TvExoPlayerManager(
             mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
         }
         val mediaItem = mediaItemBuilder.build()
-        target.setMediaItem(mediaItem)
+
+        // Cast's generic Player interface has no notion of custom request headers, and
+        // this only matters for network IPTV channels that actually carry a header
+        // override (see M3uParser) — local videos, custom streams and *downloaded*
+        // content (which relies on the shared cache-backed factory set up in the
+        // constructor for offline playback) must keep going through the player's
+        // normal setMediaItem path unchanged. Only when there's a real override do we
+        // build a one-off MediaSource via setMediaSource(...) that bypasses the cache
+        // and applies it, mirroring how VLC/Kodi apply per-channel headers.
+        val hasHeaderOverride = target is ExoPlayer && (!userAgent.isNullOrBlank() || !referrer.isNullOrBlank())
+        if (hasHeaderOverride) {
+            val requestHeaders = mutableMapOf<String, String>()
+            if (!referrer.isNullOrBlank()) requestHeaders["Referer"] = referrer
+            val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+                .setUserAgent(userAgent?.takeIf { it.isNotBlank() } ?: M3uParser.DEFAULT_USER_AGENT)
+                .setDefaultRequestProperties(requestHeaders)
+                .setAllowCrossProtocolRedirects(true)
+                .setConnectTimeoutMs(15_000)
+                .setReadTimeoutMs(15_000)
+            val mediaSource = DefaultMediaSourceFactory(httpDataSourceFactory).createMediaSource(mediaItem)
+            (target as ExoPlayer).setMediaSource(mediaSource)
+        } else {
+            target.setMediaItem(mediaItem)
+        }
+
         if (startPositionMs > 0L) {
             target.seekTo(startPositionMs)
         }
