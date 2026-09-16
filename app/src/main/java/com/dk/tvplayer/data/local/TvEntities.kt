@@ -11,7 +11,13 @@ data class TvChannelEntity(
     val logoUrl: String? = null,
     val groupTitle: String = "General",
     val streamUrl: String,
-    val isFavorite: Boolean = false
+    val isFavorite: Boolean = false,
+    // Per-channel HTTP overrides parsed from #EXTVLCOPT / piped-URL directives in the
+    // source M3U (see M3uParser). Many channels in large aggregated playlists (e.g.
+    // iptv-org's index.m3u) are behind CDNs that 403 requests missing these — VLC and
+    // Kodi apply them per-stream, so we carry them through to playback the same way.
+    val userAgent: String? = null,
+    val referrer: String? = null
 )
 
 @Entity(tableName = "epg_programs")
