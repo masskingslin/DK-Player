@@ -217,7 +217,12 @@ class TvPlayerViewModel(
 
     fun selectChannel(channel: TvChannelEntity) {
         _uiState.update { it.copy(selectedChannel = channel) }
-        playerManager.play(channel.streamUrl, title = channel.name)
+        playerManager.play(
+            channel.streamUrl,
+            title = channel.name,
+            userAgent = channel.userAgent,
+            referrer = channel.referrer
+        )
         observeEpg(channel.channelId)
     }
 
@@ -243,7 +248,19 @@ class TvPlayerViewModel(
             } else {
                 0L
             }
-            playerManager.play(url, startPositionMs = startPositionMs, title = title)
+            // PhonePlayerScreen calls this right after navigation regardless of media
+            // type, so for an IPTV channel it re-issues the play() call selectChannel()
+            // already made — matching it back up by URL here (rather than requiring
+            // every call site to thread headers through) keeps any per-channel
+            // User-Agent/Referer override from getting silently dropped on that second call.
+            val matchingChannel = _uiState.value.channels.firstOrNull { it.streamUrl == url }
+            playerManager.play(
+                url,
+                startPositionMs = startPositionMs,
+                title = title,
+                userAgent = matchingChannel?.userAgent,
+                referrer = matchingChannel?.referrer
+            )
         }
     }
 
