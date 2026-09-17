@@ -315,37 +315,52 @@ class TvPlayerViewModel(
     }
 
     /**
-     * Loads an IPTV channel list from a remote M3U playlist URL (e.g. the iptv-org
-     * index.m3u) directly over the network, parses it, and replaces the IPTV Channels
-     * tab's contents with the parsed channels. This is distinct from playing a URL —
-     * an M3U playlist is a text file listing many channels, not a single playable
-     * stream, so it must go through the parser rather than the player.
+     * Shared network fetch used by both the IPTV Channels import and the Playlists
+     * "Import as Playlist" flow — a 15k-40k channel M3U can be several MB of text, so
+     * this uses generous timeouts (see importM3uFromUrl) rather than OkHttp's 10s
+     * defaults, which are tuned for small API responses.
      */
+    private suspend fun fetchM3uStream(url: String, onStream: suspend (InputStream) -> Unit) {
+        withContext(Dispatchers.IO) {
+            val client = OkHttpClient.Builder()
+                .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+                .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+            val request = Request.Builder().url(url).build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw IOException("Server returned HTTP ${response.code}")
+                }
+                val body = response.body ?: throw IOException("Empty response from server")
+                body.byteStream().use { stream -> onStream(stream) }
+            }
+        }
+    }
+
     fun importM3uFromUrl(url: String, onComplete: (success: Boolean, errorMessage: String?) -> Unit) {
         viewModelScope.launch {
+            val result = runCatching { fetchM3uStream(url) { stream -> repository.loadM3u(stream) } }
+            onComplete(result.isSuccess, result.exceptionOrNull()?.message)
+        }
+    }
+
+    /**
+     * Same idea as [importM3uFromUrl] but for the Playlists feature: fetches an M3U
+     * channel-list URL and imports its entries as items into the currently selected
+     * playlist, instead of trying to hand the raw list URL to the player as if it were
+     * one playable stream (which always fails with a manifest-parsing error, since a
+     * channel list isn't a valid single-stream HLS/DASH manifest).
+     */
+    fun importM3uFromUrlIntoSelectedPlaylist(url: String, onComplete: (success: Boolean, errorMessage: String?) -> Unit) {
+        val playlistId = _uiState.value.selectedPlaylist?.id
+        if (playlistId == null) {
+            onComplete(false, "No playlist selected")
+            return
+        }
+        viewModelScope.launch {
             val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    // Default OkHttp timeouts (10s) are tuned for typical API responses, not
-                    // multi-megabyte playlist files (a 15k-40k channel M3U can be several MB
-                    // of text) on a slow or throttled mobile connection — a generous timeout
-                    // here is what actually lets large playlists finish downloading instead
-                    // of failing partway through.
-                    val client = OkHttpClient.Builder()
-                        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                        .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-                        .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                        .build()
-                    val request = Request.Builder().url(url).build()
-                    client.newCall(request).execute().use { response ->
-                        if (!response.isSuccessful) {
-                            throw IOException("Server returned HTTP ${response.code}")
-                        }
-                        val body = response.body ?: throw IOException("Empty response from server")
-                        body.byteStream().use { stream ->
-                            repository.loadM3u(stream)
-                        }
-                    }
-                }
+                fetchM3uStream(url) { stream -> repository.importM3uIntoPlaylist(playlistId, stream) }
             }
             onComplete(result.isSuccess, result.exceptionOrNull()?.message)
         }
