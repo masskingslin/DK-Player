@@ -143,6 +143,8 @@ class TvExoPlayerManager(
 
     private var lastPlayedUrl: String? = null
     private var lastPlayedTitle: String? = null
+    private var lastPlayedUserAgent: String? = null
+    private var lastPlayedReferrer: String? = null
     private var retryAttempt = 0
     // Many real-world IPTV stream URLs (especially Xtream-Codes-style links) have no
     // file extension at all, so ExoPlayer's default container sniffing can't tell it's
@@ -249,6 +251,8 @@ class TvExoPlayerManager(
     ) {
         lastPlayedUrl = url
         lastPlayedTitle = title ?: lastPlayedTitle
+        lastPlayedUserAgent = userAgent
+        lastPlayedReferrer = referrer
         retryAttempt = 0
         forcedHlsRetry = forceHlsMimeType
         _playbackError.value = null
@@ -343,6 +347,17 @@ class TvExoPlayerManager(
     // ---- Error handling & retry ----
 
     private fun handlePlaybackError(error: PlaybackException) {
+        // The friendly banner text is intentionally generic for users, but that means a
+        // screenshot of it alone can't distinguish four different underlying failures
+        // (malformed container vs. unsupported container vs. malformed/unsupported
+        // manifest) or show *why* — logging the real exception (errorCodeName + cause)
+        // here means `adb logcat -s DkPlayer:E` gives the actual root cause on demand
+        // without needing to change the UI or ask the user to reproduce it again.
+        android.util.Log.e(
+            "DkPlayer",
+            "Playback error for $lastPlayedUrl: ${error.errorCodeName} — ${error.message}",
+            error.cause ?: error
+        )
         _playbackError.value = friendlyErrorMessage(error)
 
         val isContainerParsingError = when (error.errorCode) {
@@ -363,7 +378,14 @@ class TvExoPlayerManager(
                 retryJob = scope.launch {
                     val url = lastPlayedUrl ?: return@launch
                     val position = _activePlayer.value.currentPosition
-                    play(url, position, lastPlayedTitle, forceHlsMimeType = true)
+                    play(
+                        url,
+                        position,
+                        lastPlayedTitle,
+                        forceHlsMimeType = true,
+                        userAgent = lastPlayedUserAgent,
+                        referrer = lastPlayedReferrer
+                    )
                 }
             }
             return
@@ -399,7 +421,7 @@ class TvExoPlayerManager(
         PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
         PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
         PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED ->
-            "This stream's format isn't supported or the file is corrupted."
+            "This stream's format isn't supported or the file is corrupted. (${error.errorCodeName})"
         PlaybackException.ERROR_CODE_TIMEOUT ->
             "Connection timed out."
         PlaybackException.ERROR_CODE_IO_UNSPECIFIED ->
@@ -411,7 +433,19 @@ class TvExoPlayerManager(
     fun retryPlayback() {
         val url = lastPlayedUrl ?: return
         val position = _activePlayer.value.currentPosition
-        play(url, position, lastPlayedTitle)
+        // Preserve whatever the last attempt was already using — otherwise tapping the
+        // on-screen "Retry" button after an automatic forced-HLS retry (or on a channel
+        // with a User-Agent/Referer override) would silently drop back to plain
+        // defaults and immediately fail again the same way.
+        val channel = lastPlayedUserAgent to lastPlayedReferrer
+        play(
+            url,
+            position,
+            lastPlayedTitle,
+            forceHlsMimeType = forcedHlsRetry,
+            userAgent = channel.first,
+            referrer = channel.second
+        )
     }
 
     fun clearError() {
