@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.IosShare
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LiveTv
@@ -48,6 +49,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -93,6 +96,7 @@ fun PlaylistDetailScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var showExportMenu by remember { mutableStateOf(false) }
     var showMoveDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(playlist.id) {
         viewModel.selectPlaylist(playlist)
@@ -125,6 +129,15 @@ fun PlaylistDetailScreen(
             onConfirm = { title, url ->
                 viewModel.addCustomItemToPlaylist(playlist.id, title, url)
                 showAddDialog = false
+            },
+            onImportAsPlaylist = { url ->
+                showAddDialog = false
+                viewModel.importM3uFromUrlIntoSelectedPlaylist(url) { success, errorMessage ->
+                    scope.launch {
+                        val message = if (success) "Playlist imported" else "Import failed: ${errorMessage ?: "unknown error"}"
+                        snackbarHostState.showSnackbar(message)
+                    }
+                }
             }
         )
     }
@@ -142,6 +155,7 @@ fun PlaylistDetailScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(state.selectedPlaylist?.name ?: playlist.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -431,9 +445,25 @@ private fun RenameDialog(initialName: String, onDismiss: () -> Unit, onConfirm: 
 }
 
 @Composable
-private fun AddPlaylistItemDialog(onDismiss: () -> Unit, onConfirm: (title: String, url: String) -> Unit) {
+private fun AddPlaylistItemDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (title: String, url: String) -> Unit,
+    onImportAsPlaylist: (url: String) -> Unit
+) {
     var title by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
+
+    // A URL ending in .m3u (not .m3u8, which is a legitimate single HLS stream) is
+    // almost always a channel *list* (e.g. iptv-org's index.m3u) rather than a single
+    // playable stream. Adding it as a plain item here would always fail to play with a
+    // "format not supported" / manifest-parsing error, because a list of thousands of
+    // unrelated channels isn't a valid single-stream manifest — same heuristic as
+    // NewStreamDialog uses for the "New Stream" flow.
+    val looksLikePlaylist = remember(url) {
+        val trimmed = url.trim().substringBefore('?')
+        trimmed.endsWith(".m3u", ignoreCase = true) && !trimmed.endsWith(".m3u8", ignoreCase = true)
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add Item") },
@@ -454,6 +484,25 @@ private fun AddPlaylistItemDialog(onDismiss: () -> Unit, onConfirm: (title: Stri
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (looksLikePlaylist) {
+                    Spacer(modifier = Modifier.padding(top = 8.dp))
+                    Row(verticalAlignment = Alignment.Top) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.padding(start = 4.dp))
+                        Text(
+                            text = "This looks like an IPTV playlist (a list of channels), not a single " +
+                                "stream — it won't play directly. Use \"Import as Playlist\" below instead " +
+                                "to add every channel in it as its own item here.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
@@ -462,7 +511,16 @@ private fun AddPlaylistItemDialog(onDismiss: () -> Unit, onConfirm: (title: Stri
                 enabled = url.isNotBlank()
             ) { Text("Add") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = {
+            Row {
+                if (looksLikePlaylist) {
+                    TextButton(onClick = { onImportAsPlaylist(url.trim()) }) {
+                        Text("Import as Playlist")
+                    }
+                }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        }
     )
 }
 
