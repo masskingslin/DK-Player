@@ -37,6 +37,10 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -46,6 +50,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -96,7 +101,33 @@ fun PlaylistDetailScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var showExportMenu by remember { mutableStateOf(false) }
     var showMoveDialog by remember { mutableStateOf(false) }
+    var showCategoryMenu by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var debouncedQuery by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf("All") }
+    var showFavoritesOnly by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Debounced the same way VideoLibraryScreen debounces the IPTV channel search —
+    // a playlist imported from a large M3U (e.g. iptv-org's index.m3u) can hold
+    // thousands of items, and re-filtering that on every keystroke feels laggy.
+    LaunchedEffect(searchQuery) {
+        kotlinx.coroutines.delay(250)
+        debouncedQuery = searchQuery
+    }
+
+    val categories = remember(state.selectedPlaylistItems) {
+        listOf("All") + state.selectedPlaylistItems.mapNotNull { it.groupTitle }.distinct().sorted()
+    }
+
+    val visibleItems = remember(state.selectedPlaylistItems, debouncedQuery, selectedCategory, showFavoritesOnly) {
+        state.selectedPlaylistItems.filter { item ->
+            val matchesQuery = debouncedQuery.isBlank() || item.title.contains(debouncedQuery, ignoreCase = true)
+            val matchesCategory = selectedCategory == "All" || item.groupTitle == selectedCategory
+            val matchesFavorite = !showFavoritesOnly || item.isFavorite
+            matchesQuery && matchesCategory && matchesFavorite
+        }
+    }
 
     LaunchedEffect(playlist.id) {
         viewModel.selectPlaylist(playlist)
@@ -234,65 +265,133 @@ fun PlaylistDetailScreen(
             }
         }
     ) { innerPadding ->
-        if (state.selectedPlaylistItems.isEmpty()) {
-            Column(
+        Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+            Row(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("This playlist is empty", style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.padding(top = 4.dp))
-                Text(
-                    "Add items manually, or import an existing M3U file.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                itemsIndexed(items = state.selectedPlaylistItems, key = { _, item -> item.id }) { index, item ->
-                    PlaylistItemRow(
-                        item = item,
-                        index = index,
-                        total = state.selectedPlaylistItems.size,
-                        isSelectionMode = isSelectionMode,
-                        isSelected = state.selectedPlaylistItemIds.contains(item.id),
-                        onClick = {
-                            if (isSelectionMode) {
-                                viewModel.toggleItemSelected(item.id)
-                            } else {
-                                onPlayItem(item.mediaUrl, item.title)
-                            }
-                        },
-                        onLongClick = {
-                            isSelectionMode = true
-                            viewModel.toggleItemSelected(item.id)
-                        },
-                        onMoveUp = { viewModel.movePlaylistItem(item, moveUp = true) },
-                        onMoveDown = { viewModel.movePlaylistItem(item, moveUp = false) },
-                        onDelete = { viewModel.removeItemFromPlaylist(item) },
-                        downloadItem = downloads[item.mediaUrl],
-                        onToggleDownload = {
-                            val existing = downloads[item.mediaUrl]
-                            when {
-                                existing == null -> downloadTracker.startDownload(item.mediaUrl, item.title)
-                                existing.state == androidx.media3.exoplayer.offline.Download.STATE_COMPLETED ->
-                                    downloadTracker.removeDownload(item.mediaUrl)
-                                existing.state == androidx.media3.exoplayer.offline.Download.STATE_FAILED ->
-                                    downloadTracker.startDownload(item.mediaUrl, item.title)
-                                else -> Unit // already downloading/queued — tapping again does nothing
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    placeholder = { Text("Search channels") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear search")
                             }
                         }
+                    }
+                )
+                Spacer(modifier = Modifier.padding(start = 8.dp))
+                IconButton(onClick = { showFavoritesOnly = !showFavoritesOnly }) {
+                    Icon(
+                        if (showFavoritesOnly) Icons.Default.Star else Icons.Default.StarBorder,
+                        contentDescription = "Favorites only",
+                        tint = if (showFavoritesOnly) MaterialTheme.colorScheme.primary else LocalContentColor.current
                     )
+                }
+                if (categories.size > 1) {
+                    Box {
+                        IconButton(onClick = { showCategoryMenu = true }) {
+                            Icon(
+                                Icons.Default.FilterList,
+                                contentDescription = "Filter by category",
+                                tint = if (selectedCategory != "All") MaterialTheme.colorScheme.primary else LocalContentColor.current
+                            )
+                        }
+                        DropdownMenu(expanded = showCategoryMenu, onDismissRequest = { showCategoryMenu = false }) {
+                            categories.forEach { category ->
+                                DropdownMenuItem(
+                                    text = { Text(category) },
+                                    onClick = {
+                                        selectedCategory = category
+                                        showCategoryMenu = false
+                                    },
+                                    leadingIcon = {
+                                        if (category == selectedCategory) {
+                                            Icon(Icons.Default.Check, contentDescription = null)
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (state.selectedPlaylistItems.isEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text("This playlist is empty", style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.padding(top = 4.dp))
+                    Text(
+                        "Add items manually, or import an existing M3U file.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else if (visibleItems.isEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text("No channels match your filters", style = MaterialTheme.typography.titleMedium)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    itemsIndexed(items = visibleItems, key = { _, item -> item.id }) { index, item ->
+                        PlaylistItemRow(
+                            item = item,
+                            index = index,
+                            total = visibleItems.size,
+                            isSelectionMode = isSelectionMode,
+                            isSelected = state.selectedPlaylistItemIds.contains(item.id),
+                            onClick = {
+                                if (isSelectionMode) {
+                                    viewModel.toggleItemSelected(item.id)
+                                } else {
+                                    onPlayItem(item.mediaUrl, item.title)
+                                }
+                            },
+                            onLongClick = {
+                                isSelectionMode = true
+                                viewModel.toggleItemSelected(item.id)
+                            },
+                            onMoveUp = { viewModel.movePlaylistItem(item, moveUp = true) },
+                            onMoveDown = { viewModel.movePlaylistItem(item, moveUp = false) },
+                            onDelete = { viewModel.removeItemFromPlaylist(item) },
+                            onToggleFavorite = { viewModel.toggleFavoritePlaylistItem(item) },
+                            downloadItem = downloads[item.mediaUrl],
+                            onToggleDownload = {
+                                val existing = downloads[item.mediaUrl]
+                                when {
+                                    existing == null -> downloadTracker.startDownload(item.mediaUrl, item.title)
+                                    existing.state == androidx.media3.exoplayer.offline.Download.STATE_COMPLETED ->
+                                        downloadTracker.removeDownload(item.mediaUrl)
+                                    existing.state == androidx.media3.exoplayer.offline.Download.STATE_FAILED ->
+                                        downloadTracker.startDownload(item.mediaUrl, item.title)
+                                    else -> Unit // already downloading/queued — tapping again does nothing
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -312,6 +411,7 @@ private fun PlaylistItemRow(
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
     onDelete: () -> Unit,
+    onToggleFavorite: () -> Unit,
     downloadItem: com.dk.tvplayer.download.DownloadItem?,
     onToggleDownload: () -> Unit
 ) {
@@ -364,6 +464,13 @@ private fun PlaylistItemRow(
             }
 
             if (!isSelectionMode) {
+                IconButton(onClick = onToggleFavorite, modifier = Modifier.size(28.dp)) {
+                    Icon(
+                        if (item.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                        contentDescription = if (item.isFavorite) "Remove from favorites" else "Add to favorites",
+                        tint = if (item.isFavorite) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                    )
+                }
                 DownloadStatusButton(downloadItem = downloadItem, onClick = onToggleDownload)
                 Column {
                     IconButton(onClick = onMoveUp, enabled = index > 0, modifier = Modifier.size(28.dp)) {
