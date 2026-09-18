@@ -53,7 +53,6 @@ class TvPlayerViewModel(
     private val _channelsInput = MutableStateFlow<List<TvChannelEntity>>(emptyList())
     private val _categoryInput = MutableStateFlow("All")
     private val _searchQueryInput = MutableStateFlow("")
-    private val _favoriteIdsInput = MutableStateFlow<Set<String>>(emptySet())
     private val _showFavoritesOnlyInput = MutableStateFlow(false)
     private val _sortOptionInput = MutableStateFlow(SortOption.NAME_ASC)
 
@@ -66,7 +65,20 @@ class TvPlayerViewModel(
         viewModelScope.launch {
             repository.getAllChannels().collect { list ->
                 _channelsInput.value = list
-                _uiState.update { it.copy(channels = list) }
+                // isFavorite now lives on TvChannelEntity itself (persisted in the DB)
+                // rather than an in-memory-only set, so favoriteChannelIds just mirrors
+                // whatever the DB says — which means it also survives app restarts, and
+                // picks up favorites toggled from a Playlist item (see
+                // TvRepository.setPlaylistItemFavorite) the same way it picks up ones
+                // toggled from the IPTV Channels tab.
+                _uiState.update {
+                    it.copy(
+                        channels = list,
+                        favoriteChannelIds = list.filter { channel -> channel.isFavorite }
+                            .map { channel -> channel.channelId }
+                            .toSet()
+                    )
+                }
             }
         }
 
@@ -122,9 +134,9 @@ class TvPlayerViewModel(
                 _channelsInput,
                 _categoryInput,
                 _searchQueryInput.debounce(250),
-                _favoriteIdsInput,
                 _showFavoritesOnlyInput
-            ) { channels, category, query, favoriteIds, showFavoritesOnly ->
+            ) { channels, category, query, showFavoritesOnly ->
+                val favoriteIds = channels.filter { it.isFavorite }.map { it.channelId }.toSet()
                 ChannelFilterInputs(channels, category, query, favoriteIds, showFavoritesOnly, _sortOptionInput.value)
             }.combine(_sortOptionInput) { inputs, sortOption ->
                 inputs.copy(sortOption = sortOption)
@@ -170,12 +182,20 @@ class TvPlayerViewModel(
     }
 
     fun toggleFavorite(channelId: String) {
-        _uiState.update { current ->
-            val updated = current.favoriteChannelIds.toMutableSet()
-            if (!updated.add(channelId)) updated.remove(channelId)
-            current.copy(favoriteChannelIds = updated)
+        // Persist to the DB (channels.isFavorite is the single source of truth now —
+        // see observeData()); the channels Flow re-emitting is what actually updates
+        // favoriteChannelIds and filteredChannels, so no local uiState mutation here.
+        viewModelScope.launch {
+            val current = _uiState.value.channels.firstOrNull { it.channelId == channelId }?.isFavorite ?: false
+            repository.setChannelFavorite(channelId, !current)
         }
-        _favoriteIdsInput.value = _uiState.value.favoriteChannelIds
+    }
+
+    /** Favorites/unfavorites a Playlists-tab item — also mirrors onto the matching
+     *  channel (by stream URL) so it shows up in Home's Favorite Channels row and the
+     *  IPTV Channels tab too. See TvRepository.setPlaylistItemFavorite. */
+    fun toggleFavoritePlaylistItem(item: PlaylistItemEntity) {
+        viewModelScope.launch { repository.setPlaylistItemFavorite(item, !item.isFavorite) }
     }
 
     fun toggleShowFavoritesOnly() {
