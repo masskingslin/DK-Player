@@ -118,6 +118,46 @@ class TvRepository(
             )
         }
 
+    /** Persists a channel's favorite flag directly (source of truth for Home's Favorite
+     *  Channels row and the IPTV Channels tab's favorite filter — see
+     *  TvPlayerViewModel.toggleFavorite). */
+    suspend fun setChannelFavorite(channelId: String, isFavorite: Boolean) = withContext(Dispatchers.IO) {
+        channelDao.setFavorite(channelId, isFavorite)
+    }
+
+    /**
+     * Toggles a playlist item's own favorite flag, and mirrors that onto a matching
+     * entry in the "channels" table (matched by stream URL, since playlist items don't
+     * carry a stable channelId) so the Home screen's Favorite Channels row and the
+     * IPTV Channels tab both pick it up — favoriting a channel from either place ends
+     * up meaning the same thing. If no channel with this stream URL exists yet (the
+     * common case for an item added straight to a custom playlist rather than via the
+     * IPTV import), one is created so there's something for "favorite" to attach to.
+     */
+    suspend fun setPlaylistItemFavorite(item: PlaylistItemEntity, isFavorite: Boolean) = withContext(Dispatchers.IO) {
+        playlistDao.setItemFavorite(item.id, isFavorite)
+
+        val existingChannel = channelDao.getChannelByStreamUrl(item.mediaUrl)
+        if (existingChannel != null) {
+            channelDao.setFavorite(existingChannel.channelId, isFavorite)
+        } else if (isFavorite) {
+            // Same channelId derivation M3uParser uses for entries with no tvg-id, so a
+            // later real M3U import of the same channel will land on the same row
+            // instead of creating a duplicate.
+            val channelId = item.title.lowercase().replace(" ", "_")
+            channelDao.insertChannel(
+                TvChannelEntity(
+                    channelId = channelId,
+                    name = item.title,
+                    logoUrl = item.logoUrl,
+                    groupTitle = item.groupTitle ?: "General",
+                    streamUrl = item.mediaUrl,
+                    isFavorite = true
+                )
+            )
+        }
+    }
+
     suspend fun removeItemFromPlaylist(item: PlaylistItemEntity) = withContext(Dispatchers.IO) {
         playlistDao.deleteItem(item)
     }
