@@ -14,7 +14,7 @@ import androidx.room.RoomDatabase
         PlaylistEntity::class,
         PlaylistItemEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class TvDatabase : RoomDatabase() {
@@ -35,8 +35,9 @@ abstract class TvDatabase : RoomDatabase() {
                     TvDatabase::class.java,
                     "dk_tvplayer_database.db"
                 )
-                    // Playlist tables were new in v3, and the channels table's
-                    // userAgent/referrer columns are new in v4; destructive fallback is
+                    // Playlist tables were new in v3, the channels table's
+                    // userAgent/referrer columns were new in v4, and playlist_items'
+                    // isFavorite column is new in v5; destructive fallback is
                     // acceptable here since channels/streams/history are all re-derived
                     // or re-added by the user (e.g. by reloading their M3U) rather than
                     // being irreplaceable data.

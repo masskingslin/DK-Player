@@ -19,11 +19,20 @@ interface TvChannelDao {
     @Query("SELECT DISTINCT groupTitle FROM channels ORDER BY groupTitle ASC")
     fun getAllGroups(): Flow<List<String>>
 
+    @Query("SELECT * FROM channels WHERE streamUrl = :streamUrl LIMIT 1")
+    suspend fun getChannelByStreamUrl(streamUrl: String): TvChannelEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertChannels(channels: List<TvChannelEntity>)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertChannel(channel: TvChannelEntity): Long
+
     @Update
     suspend fun updateChannel(channel: TvChannelEntity)
+
+    @Query("UPDATE channels SET isFavorite = :isFavorite WHERE channelId = :channelId")
+    suspend fun setFavorite(channelId: String, isFavorite: Boolean)
 
     @Query("DELETE FROM channels")
     suspend fun clearChannels()
@@ -117,4 +126,7 @@ interface PlaylistDao {
 
     @Query("SELECT COUNT(*) FROM playlist_items WHERE playlistId = :playlistId")
     fun getItemCount(playlistId: Long): Flow<Int>
+
+    @Query("UPDATE playlist_items SET isFavorite = :isFavorite WHERE id = :itemId")
+    suspend fun setItemFavorite(itemId: Long, isFavorite: Boolean)
 }

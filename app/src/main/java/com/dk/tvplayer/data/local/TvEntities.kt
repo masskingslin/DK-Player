@@ -72,5 +72,10 @@ data class PlaylistItemEntity(
     val mediaUrl: String,
     val logoUrl: String? = null,
     val groupTitle: String? = null,
-    val position: Int = 0
+    val position: Int = 0,
+    // Local to this playlist item. Toggling it also mirrors the channel into (or
+    // updates it in) the "channels" table's own isFavorite flag so it shows up in the
+    // Home screen's Favorite Channels row and the IPTV Channels tab too — see
+    // TvPlayerViewModel.toggleFavoritePlaylistItem.
+    val isFavorite: Boolean = false
 )
