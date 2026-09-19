@@ -421,6 +421,37 @@ fun SettingsScreen(
                 }
             }
         }
+
+        if (com.dk.tvplayer.util.CrashLogger.hasLogs(context)) {
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(text = "Diagnostics", style = MaterialTheme.typography.headlineMedium)
+            Spacer(modifier = Modifier.height(16.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        "The app has crashed at least once since this was added. Share the most " +
+                            "recent crash report (stack trace + device info, no personal data) so it " +
+                            "can be diagnosed.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(onClick = {
+                        val log = com.dk.tvplayer.util.CrashLogger.latestLogFile(context)
+                        if (log != null) {
+                            ShareFileUtils.shareTextFile(context, log.name, "text/plain", log.readText())
+                        }
+                    }) {
+                        Icon(Icons.Default.FileUpload, contentDescription = null)
+                        Spacer(modifier = Modifier.padding(start = 4.dp))
+                        Text("Share Crash Log")
+                    }
+                }
+            }
+        }
     }
 }
 
