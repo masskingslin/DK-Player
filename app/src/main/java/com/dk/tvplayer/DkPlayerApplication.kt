@@ -5,6 +5,7 @@ import androidx.media3.common.util.UnstableApi
 import com.dk.tvplayer.data.local.SettingsDataStore
 import com.dk.tvplayer.download.DownloadManagerHolder
 import com.dk.tvplayer.player.TvExoPlayerManager
+import com.dk.tvplayer.util.CrashLogger
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
@@ -31,6 +32,10 @@ class DkPlayerApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Installed before anything else so a crash during startup itself (rare, but
+        // real — e.g. a bad DB migration) still gets logged rather than only ever
+        // being visible to whoever happens to have a debugger attached.
+        CrashLogger.install(this)
         settingsDataStore = SettingsDataStore(this)
         // Hardware acceleration is baked into the player at construction time (see
         // TvExoPlayerManager's doc comment), so this one settings read has to happen
