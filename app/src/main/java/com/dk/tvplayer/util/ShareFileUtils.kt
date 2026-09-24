@@ -21,4 +21,13 @@ object ShareFileUtils {
         }
         context.startActivity(Intent.createChooser(intent, "Share $fileName"))
     }
+
+    /** Plain text share (e.g. a channel/video URL or title) — no file involved. */
+    fun shareText(context: Context, text: String, chooserTitle: String = "Share") {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        context.startActivity(Intent.createChooser(intent, chooserTitle))
+    }
 }
