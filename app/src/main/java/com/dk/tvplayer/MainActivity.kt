@@ -63,7 +63,8 @@ class MainActivity : ComponentActivity() {
                     streamDao = db.streamDao(),
                     playlistDao = db.playlistDao(),
                     videoScanner = videoScanner,
-                    audioScanner = audioScanner
+                    audioScanner = audioScanner,
+                    videoGroupDao = db.videoGroupDao()
                 )
                 // The player itself now lives on DkPlayerApplication (not created here) so
                 // that PlaybackService can share the exact same instance for background
