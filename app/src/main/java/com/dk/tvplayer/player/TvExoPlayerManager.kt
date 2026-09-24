@@ -105,6 +105,7 @@ class TvExoPlayerManager(
     val exoPlayer: ExoPlayer get() = localPlayer
 
     private var castPlayer: CastPlayer? = null
+    private var castAudioOnlyEnabled = false
 
     private val _activePlayer = MutableStateFlow<Player>(localPlayer)
     val activePlayerFlow: StateFlow<Player> = _activePlayer.asStateFlow()
@@ -604,9 +605,20 @@ class TvExoPlayerManager(
         val position = localPlayer.currentPosition
         localPlayer.pause()
         if (url != null) {
+            val metadataBuilder = MediaMetadata.Builder().setTitle(lastPlayedTitle ?: "")
+            if (castAudioOnlyEnabled) {
+                // Best-effort only: without a local transcoding pipeline (VLC's own
+                // renderer strips video before sending; standard Google Cast has no
+                // equivalent), the video track still reaches the receiver and gets
+                // decoded there. This hint just tells the receiver's Default Media
+                // Receiver UI to present it as an audio track (album-art style screen)
+                // rather than a video player — it doesn't reduce bandwidth or actually
+                // remove the video stream.
+                metadataBuilder.setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC_TRACK)
+            }
             val mediaItem = MediaItem.Builder()
                 .setUri(url)
-                .setMediaMetadata(MediaMetadata.Builder().setTitle(lastPlayedTitle ?: "").build())
+                .setMediaMetadata(metadataBuilder.build())
                 .build()
             cast.setMediaItem(mediaItem, position)
             cast.prepare()
@@ -625,6 +637,30 @@ class TvExoPlayerManager(
         val url = lastPlayedUrl
         if (url != null) {
             play(url, position, lastPlayedTitle)
+        }
+    }
+
+    /** Persisted preference plumbed in from Settings — see the doc comment on
+     *  switchToCast for what this can and can't actually do. */
+    fun setCastAudioOnly(enabled: Boolean) {
+        castAudioOnlyEnabled = enabled
+    }
+
+    /**
+     * Settings "Wireless casting" toggle. Disabling it tears down Cast entirely —
+     * falling back to local playback if a session was active, and releasing the
+     * CastContext/CastPlayer so the cast button disappears and no further device
+     * discovery happens — rather than just hiding the button while still scanning.
+     */
+    fun setWirelessCastingEnabled(enabled: Boolean) {
+        if (enabled) {
+            if (castPlayer == null) initCast()
+        } else {
+            if (_isCasting.value) switchToLocal()
+            castPlayer?.setSessionAvailabilityListener(null)
+            castPlayer?.release()
+            castPlayer = null
+            _isCastAvailable.value = false
         }
     }
 
