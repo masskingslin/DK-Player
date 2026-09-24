@@ -216,6 +216,41 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        Text(text = "Casting", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                SettingToggleItem(
+                    title = "Wireless Casting",
+                    subtitle = "Show the cast button and allow casting to Chromecast devices",
+                    checked = settings.wirelessCastingEnabled,
+                    onCheckedChange = { viewModel.setWirelessCastingEnabled(it) }
+                )
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                SettingToggleItem(
+                    title = "Audio Only",
+                    subtitle = "Cast only audio, no video",
+                    checked = settings.castAudioOnly,
+                    enabled = settings.wirelessCastingEnabled,
+                    onCheckedChange = { viewModel.setCastAudioOnly(it) }
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Note: unlike VLC's own renderer, standard Chromecast can't transcode " +
+                        "video away locally — \"Audio Only\" tells the TV to show an audio-style " +
+                        "screen, but doesn't reduce the data actually sent.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
         Text(text = "Subtitles", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -481,6 +516,7 @@ fun SettingToggleItem(
     title: String,
     subtitle: String,
     checked: Boolean,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
@@ -488,13 +524,17 @@ fun SettingToggleItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     }
 }
