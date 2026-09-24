@@ -9,6 +9,7 @@ import com.dk.tvplayer.data.backup.BackupPlaylist
 import com.dk.tvplayer.data.backup.SettingsBackupManager
 import com.dk.tvplayer.data.local.AppLanguage
 import com.dk.tvplayer.data.local.AppThemeMode
+import com.dk.tvplayer.data.local.LocalVideoItem
 import com.dk.tvplayer.data.local.PlaylistEntity
 import com.dk.tvplayer.data.local.PlaylistItemEntity
 import com.dk.tvplayer.data.local.SettingsDataStore
@@ -107,6 +108,18 @@ class TvPlayerViewModel(
         }
 
         viewModelScope.launch {
+            repository.getVideoGroups().collect { groups ->
+                _uiState.update { it.copy(videoGroups = groups) }
+            }
+        }
+
+        viewModelScope.launch {
+            repository.getLocalVideoMeta().collect { meta ->
+                _uiState.update { it.copy(localVideoMeta = meta) }
+            }
+        }
+
+        viewModelScope.launch {
             settingsDataStore.settingsFlow.collect { settings ->
                 _uiState.update { it.copy(sortOption = settings.sortOption, appSettings = settings) }
                 _sortOptionInput.value = settings.sortOption
@@ -116,6 +129,8 @@ class TvPlayerViewModel(
                 playerManager.setFastSeekEnabled(settings.fastSeekEnabled)
                 playerManager.setMaxVideoResolution(settings.maxVideoResolution.width, settings.maxVideoResolution.height)
                 playerManager.setBackgroundPlaybackEnabled(settings.backgroundAudioPlayback)
+                playerManager.setCastAudioOnly(settings.castAudioOnly)
+                playerManager.setWirelessCastingEnabled(settings.wirelessCastingEnabled)
                 applyLocaleIfNeeded(settings.appLanguage)
             }
         }
@@ -189,6 +204,11 @@ class TvPlayerViewModel(
             val current = _uiState.value.channels.firstOrNull { it.channelId == channelId }?.isFavorite ?: false
             repository.setChannelFavorite(channelId, !current)
         }
+    }
+
+    /** Removes a single channel from the IPTV Channels list (context-menu "Delete"). */
+    fun deleteChannel(channel: TvChannelEntity) {
+        viewModelScope.launch { repository.deleteChannel(channel) }
     }
 
     /** Favorites/unfavorites a Playlists-tab item — also mirrors onto the matching
@@ -323,6 +343,38 @@ class TvPlayerViewModel(
         }
     }
 
+    // ---- Local video groups & played state ----
+
+    fun setVideoPlayed(video: LocalVideoItem, isPlayed: Boolean) {
+        viewModelScope.launch { repository.setVideoPlayed(video.filePath, isPlayed) }
+    }
+
+    fun setVideosPlayed(videos: List<LocalVideoItem>, isPlayed: Boolean) {
+        viewModelScope.launch { repository.setVideosPlayed(videos.map { it.filePath }, isPlayed) }
+    }
+
+    /** Confirms an auto-suggested group (or creates a fresh one for a single video via
+     *  "Add to Video Group") as a real, renameable/ungroupable [VideoGroupEntity]. */
+    fun createVideoGroup(name: String, videos: List<LocalVideoItem>) {
+        viewModelScope.launch { repository.createVideoGroup(name, videos.map { it.filePath }) }
+    }
+
+    fun addVideosToGroup(groupId: Long, videos: List<LocalVideoItem>) {
+        viewModelScope.launch { repository.addFilesToGroup(groupId, videos.map { it.filePath }) }
+    }
+
+    fun renameVideoGroup(groupId: Long, name: String) {
+        viewModelScope.launch { repository.renameVideoGroup(groupId, name) }
+    }
+
+    fun ungroupVideos(groupId: Long) {
+        viewModelScope.launch { repository.ungroupVideos(groupId) }
+    }
+
+    fun removeVideoFromGroup(video: LocalVideoItem) {
+        viewModelScope.launch { repository.removeFileFromGroup(video.filePath) }
+    }
+
     fun refreshLocalAudio() {
         viewModelScope.launch {
             val audio = repository.scanLocalAudio()
@@ -390,6 +442,25 @@ class TvPlayerViewModel(
 
     fun createPlaylist(name: String) {
         viewModelScope.launch { repository.createPlaylist(name.ifBlank { "New Playlist" }) }
+    }
+
+    /** Used by the "Add to Playlist" context-menu action's "New Playlist" option — needs
+     *  the new playlist's id back so the item can go straight into it. */
+    fun createPlaylistAndAddItem(name: String, title: String, url: String) {
+        viewModelScope.launch {
+            val playlistId = repository.createPlaylist(name.ifBlank { "New Playlist" })
+            repository.addItemToPlaylist(playlistId, title, url)
+        }
+    }
+
+    /** Same idea, for adding a whole video group to a brand-new playlist in one go
+     *  (see VideoLibraryScreen's group "Add to Playlist" action) — avoids only the
+     *  first member landing in the new playlist and the rest silently being dropped. */
+    fun createPlaylistAndAddItems(name: String, items: List<Pair<String, String>>) {
+        viewModelScope.launch {
+            val playlistId = repository.createPlaylist(name.ifBlank { "New Playlist" })
+            items.forEach { (title, url) -> repository.addItemToPlaylist(playlistId, title, url) }
+        }
     }
 
     fun renamePlaylist(playlist: PlaylistEntity, newName: String) {
@@ -577,6 +648,15 @@ class TvPlayerViewModel(
     fun setAppLanguage(language: AppLanguage) {
         viewModelScope.launch { settingsDataStore.setAppLanguage(language) }
         applyLocaleIfNeeded(language)
+    }
+
+    fun setWirelessCastingEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.setWirelessCastingEnabled(enabled) }
+        playerManager.setWirelessCastingEnabled(enabled)
+    }
+
+    fun setCastAudioOnly(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.setCastAudioOnly(enabled) }
     }
 
     private fun applyLocaleIfNeeded(language: AppLanguage) {

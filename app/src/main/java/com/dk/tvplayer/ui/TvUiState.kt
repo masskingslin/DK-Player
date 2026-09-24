@@ -4,12 +4,14 @@ import com.dk.tvplayer.data.local.AppSettings
 import com.dk.tvplayer.data.local.HistoryEntity
 import com.dk.tvplayer.data.local.LocalAudioItem
 import com.dk.tvplayer.data.local.LocalVideoItem
+import com.dk.tvplayer.data.local.LocalVideoMetaEntity
 import com.dk.tvplayer.data.local.PlaylistEntity
 import com.dk.tvplayer.data.local.PlaylistItemEntity
 import com.dk.tvplayer.data.local.SortOption
 import com.dk.tvplayer.data.local.StreamEntity
 import com.dk.tvplayer.data.local.TvChannelEntity
 import com.dk.tvplayer.data.local.TvEpgProgramEntity
+import com.dk.tvplayer.data.local.VideoGroupEntity
 
 data class TvUiState(
     val channels: List<TvChannelEntity> = emptyList(),
@@ -35,6 +37,12 @@ data class TvUiState(
     val selectedPlaylist: PlaylistEntity? = null,
     val selectedPlaylistItems: List<PlaylistItemEntity> = emptyList(),
     val selectedPlaylistItemIds: Set<Long> = emptySet(),
+
+    // VLC-style local video grouping (episodes/parts shown together) and per-file
+    // played state — see TvPlayerViewModel.localVideoDisplayItems for how these
+    // combine with localVideos into what VideoLibraryScreen actually renders.
+    val videoGroups: List<VideoGroupEntity> = emptyList(),
+    val localVideoMeta: List<LocalVideoMetaEntity> = emptyList(),
 
     // App settings (theme, player config, default speed) — persisted via DataStore.
     // Live player feature state (playback speed / error / cast / sleep timer) is
