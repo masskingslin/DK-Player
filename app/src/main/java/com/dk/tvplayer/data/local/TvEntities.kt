@@ -79,3 +79,31 @@ data class PlaylistItemEntity(
     // TvPlayerViewModel.toggleFavoritePlaylistItem.
     val isFavorite: Boolean = false
 )
+
+/**
+ * A user-created (or auto-suggested, once confirmed) group of local video files, VLC
+ * style — e.g. episodes of a show or parts of a movie shown together as one entry in
+ * the library. Membership lives in [LocalVideoMetaEntity], not here, since a local
+ * video is identified by MediaStore rather than owned by this app's DB.
+ */
+@Entity(tableName = "video_groups")
+data class VideoGroupEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val createdDate: Long = System.currentTimeMillis()
+)
+
+/**
+ * Per-local-file state this app tracks that MediaStore itself has no concept of: which
+ * [VideoGroupEntity] (if any) the file belongs to, and whether it's been marked played.
+ * Keyed by file path rather than the MediaStore row id, since the id is only stable for
+ * as long as the file isn't re-scanned/re-indexed by the system; the path is what the
+ * rest of the app (playback, playlists) already keys everything else on. A row only
+ * exists here once a file has been grouped or marked played — most files never need one.
+ */
+@Entity(tableName = "local_video_meta")
+data class LocalVideoMetaEntity(
+    @PrimaryKey val filePath: String,
+    val groupId: Long? = null,
+    val isPlayed: Boolean = false
+)

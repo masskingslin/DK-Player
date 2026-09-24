@@ -85,7 +85,15 @@ data class AppSettings(
     val subtitleTextSize: SubtitleTextSize = SubtitleTextSize.MEDIUM,
     val subtitleColor: SubtitleColorPreset = SubtitleColorPreset.WHITE,
     val showListHeaders: Boolean = true,
-    val appLanguage: AppLanguage = AppLanguage.SYSTEM_DEFAULT
+    val appLanguage: AppLanguage = AppLanguage.SYSTEM_DEFAULT,
+    // Casting (Chromecast). wirelessCastingEnabled off hides the cast button/stops
+    // device discovery entirely. castAudioOnly is a best-effort hint only — see
+    // TvExoPlayerManager.startCasting: without a local transcoding pipeline (which
+    // this app doesn't have, unlike VLC's own renderer), it can't strip the video
+    // track before it reaches the Cast receiver, it can only present the session as
+    // an audio track so the receiver shows its audio-styled UI instead of a video one.
+    val wirelessCastingEnabled: Boolean = true,
+    val castAudioOnly: Boolean = false
 )
 
 enum class SubtitleTextSize(val label: String, val sp: Float) {
@@ -125,6 +133,8 @@ class SettingsDataStore(private val context: Context) {
         val SUBTITLE_COLOR = stringPreferencesKey("subtitle_color")
         val SHOW_LIST_HEADERS = booleanPreferencesKey("show_list_headers")
         val APP_LANGUAGE = stringPreferencesKey("app_language")
+        val WIRELESS_CASTING_ENABLED = booleanPreferencesKey("wireless_casting_enabled")
+        val CAST_AUDIO_ONLY = booleanPreferencesKey("cast_audio_only")
     }
 
     val settingsFlow: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -154,7 +164,9 @@ class SettingsDataStore(private val context: Context) {
             showListHeaders = prefs[Keys.SHOW_LIST_HEADERS] ?: true,
             appLanguage = prefs[Keys.APP_LANGUAGE]
                 ?.let { runCatching { AppLanguage.valueOf(it) }.getOrNull() }
-                ?: AppLanguage.SYSTEM_DEFAULT
+                ?: AppLanguage.SYSTEM_DEFAULT,
+            wirelessCastingEnabled = prefs[Keys.WIRELESS_CASTING_ENABLED] ?: true,
+            castAudioOnly = prefs[Keys.CAST_AUDIO_ONLY] ?: false
         )
     }
 
@@ -182,6 +194,10 @@ class SettingsDataStore(private val context: Context) {
         context.dataStore.edit { it[Keys.SHOW_LIST_HEADERS] = value }
     suspend fun setAppLanguage(value: AppLanguage) =
         context.dataStore.edit { it[Keys.APP_LANGUAGE] = value.name }
+    suspend fun setWirelessCastingEnabled(value: Boolean) =
+        context.dataStore.edit { it[Keys.WIRELESS_CASTING_ENABLED] = value }
+    suspend fun setCastAudioOnly(value: Boolean) =
+        context.dataStore.edit { it[Keys.CAST_AUDIO_ONLY] = value }
 
     /** Bulk apply — used when importing a settings backup file. */
     suspend fun applyAll(settings: AppSettings) {
@@ -202,6 +218,8 @@ class SettingsDataStore(private val context: Context) {
             prefs[Keys.SUBTITLE_COLOR] = settings.subtitleColor.name
             prefs[Keys.SHOW_LIST_HEADERS] = settings.showListHeaders
             prefs[Keys.APP_LANGUAGE] = settings.appLanguage.name
+            prefs[Keys.WIRELESS_CASTING_ENABLED] = settings.wirelessCastingEnabled
+            prefs[Keys.CAST_AUDIO_ONLY] = settings.castAudioOnly
         }
     }
 }

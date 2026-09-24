@@ -34,6 +34,9 @@ interface TvChannelDao {
     @Query("UPDATE channels SET isFavorite = :isFavorite WHERE channelId = :channelId")
     suspend fun setFavorite(channelId: String, isFavorite: Boolean)
 
+    @Delete
+    suspend fun deleteChannel(channel: TvChannelEntity)
+
     @Query("DELETE FROM channels")
     suspend fun clearChannels()
 }
