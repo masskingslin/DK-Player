@@ -15,6 +15,9 @@ import com.dk.tvplayer.data.local.TvChannelDao
 import com.dk.tvplayer.data.local.TvChannelEntity
 import com.dk.tvplayer.data.local.TvEpgDao
 import com.dk.tvplayer.data.local.TvEpgProgramEntity
+import com.dk.tvplayer.data.local.VideoGroupDao
+import com.dk.tvplayer.data.local.VideoGroupEntity
+import com.dk.tvplayer.data.local.LocalVideoMetaEntity
 import com.dk.tvplayer.data.parser.M3uEntry
 import com.dk.tvplayer.data.parser.M3uParser
 import kotlinx.coroutines.Dispatchers
@@ -29,7 +32,8 @@ class TvRepository(
     private val streamDao: StreamDao,
     private val playlistDao: PlaylistDao,
     private val videoScanner: LocalVideoScanner,
-    private val audioScanner: LocalAudioScanner
+    private val audioScanner: LocalAudioScanner,
+    private val videoGroupDao: VideoGroupDao
 ) {
     fun getAllChannels(): Flow<List<TvChannelEntity>> = channelDao.getAllChannels()
     fun getAllGroups(): Flow<List<String>> = channelDao.getAllGroups()
@@ -75,6 +79,65 @@ class TvRepository(
 
     suspend fun scanLocalVideos(): List<LocalVideoItem> = withContext(Dispatchers.IO) {
         videoScanner.scanDeviceVideos()
+    }
+
+    // ---- Local video groups & per-file metadata (played state, group membership) ----
+
+    fun getVideoGroups(): Flow<List<VideoGroupEntity>> = videoGroupDao.getAllGroups()
+    fun getLocalVideoMeta(): Flow<List<LocalVideoMetaEntity>> = videoGroupDao.getAllMeta()
+
+    suspend fun setVideoPlayed(filePath: String, isPlayed: Boolean) = withContext(Dispatchers.IO) {
+        val existing = videoGroupDao.getMeta(filePath)
+        if (existing != null) {
+            videoGroupDao.setPlayed(filePath, isPlayed)
+        } else {
+            videoGroupDao.upsertMeta(LocalVideoMetaEntity(filePath = filePath, isPlayed = isPlayed))
+        }
+    }
+
+    suspend fun setVideosPlayed(filePaths: List<String>, isPlayed: Boolean) = withContext(Dispatchers.IO) {
+        filePaths.forEach { path ->
+            val existing = videoGroupDao.getMeta(path)
+            if (existing != null) videoGroupDao.setPlayed(path, isPlayed)
+            else videoGroupDao.upsertMeta(LocalVideoMetaEntity(filePath = path, isPlayed = isPlayed))
+        }
+    }
+
+    /** Creates a new named group containing exactly these files (VLC's "Add to video
+     *  group" on a multi-selection, or the initial group a rename/ungroup acts on). */
+    suspend fun createVideoGroup(name: String, filePaths: List<String>): Long = withContext(Dispatchers.IO) {
+        val groupId = videoGroupDao.insertGroup(VideoGroupEntity(name = name))
+        ensureMetaRowsExist(filePaths)
+        videoGroupDao.assignGroup(filePaths, groupId)
+        groupId
+    }
+
+    suspend fun addFilesToGroup(groupId: Long, filePaths: List<String>) = withContext(Dispatchers.IO) {
+        ensureMetaRowsExist(filePaths)
+        videoGroupDao.assignGroup(filePaths, groupId)
+    }
+
+    suspend fun renameVideoGroup(groupId: Long, name: String) = withContext(Dispatchers.IO) {
+        videoGroupDao.renameGroup(groupId, name)
+    }
+
+    /** Dissolves the group: members go back to being standalone entries, the group
+     *  itself is deleted. */
+    suspend fun ungroupVideos(groupId: Long) = withContext(Dispatchers.IO) {
+        videoGroupDao.clearGroupMembers(groupId)
+        videoGroupDao.deleteGroup(groupId)
+    }
+
+    suspend fun removeFileFromGroup(filePath: String) = withContext(Dispatchers.IO) {
+        videoGroupDao.assignGroup(listOf(filePath), null)
+    }
+
+    private suspend fun ensureMetaRowsExist(filePaths: List<String>) {
+        filePaths.forEach { path ->
+            if (videoGroupDao.getMeta(path) == null) {
+                videoGroupDao.upsertMeta(LocalVideoMetaEntity(filePath = path))
+            }
+        }
     }
 
     suspend fun scanLocalAudio(): List<LocalAudioItem> = withContext(Dispatchers.IO) {
@@ -123,6 +186,10 @@ class TvRepository(
      *  TvPlayerViewModel.toggleFavorite). */
     suspend fun setChannelFavorite(channelId: String, isFavorite: Boolean) = withContext(Dispatchers.IO) {
         channelDao.setFavorite(channelId, isFavorite)
+    }
+
+    suspend fun deleteChannel(channel: TvChannelEntity) = withContext(Dispatchers.IO) {
+        channelDao.deleteChannel(channel)
     }
 
     /**
