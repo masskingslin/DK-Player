@@ -614,7 +614,7 @@ class TvExoPlayerManager(
                 // Receiver UI to present it as an audio track (album-art style screen)
                 // rather than a video player — it doesn't reduce bandwidth or actually
                 // remove the video stream.
-                metadataBuilder.setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC_TRACK)
+                metadataBuilder.setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
             }
             val mediaItem = MediaItem.Builder()
                 .setUri(url)
