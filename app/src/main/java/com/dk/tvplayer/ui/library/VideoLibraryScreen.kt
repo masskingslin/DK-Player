@@ -426,26 +426,6 @@ fun VideoLibraryScreen(
                         is LocalVideoDisplayItem.Group -> item.displayName
                     }
 
-                    @Composable
-                    fun renderItem(item: LocalVideoDisplayItem) {
-                        when (item) {
-                            is LocalVideoDisplayItem.Single -> LocalVideoCard(
-                                video = item.video,
-                                showThumbnail = state.appSettings.videoThumbnailsEnabled,
-                                isPlayed = item.isPlayed,
-                                onClick = { onPlayVideo(item.video.filePath, item.video.name, false) },
-                                onLongClick = { menuVideo = item.video },
-                                modifier = Modifier.animateItem()
-                            )
-                            is LocalVideoDisplayItem.Group -> VideoGroupCard(
-                                group = item,
-                                onClick = { groupPlaybackTarget = item },
-                                onLongClick = { menuGroup = item },
-                                modifier = Modifier.animateItem()
-                            )
-                        }
-                    }
-
                     if (showHeaders) {
                         val grouped = filteredItems.groupBy { item ->
                             val c = itemLabel(item).firstOrNull()?.uppercaseChar()
@@ -460,10 +440,44 @@ fun VideoLibraryScreen(
                                     modifier = Modifier.padding(vertical = 4.dp)
                                 )
                             }
-                            gridItems(headerItems, key = { it.key }) { item -> renderItem(item) }
+                            gridItems(headerItems, key = { it.key }) { item ->
+                                when (item) {
+                                    is LocalVideoDisplayItem.Single -> LocalVideoCard(
+                                        video = item.video,
+                                        showThumbnail = state.appSettings.videoThumbnailsEnabled,
+                                        isPlayed = item.isPlayed,
+                                        onClick = { onPlayVideo(item.video.filePath, item.video.name, false) },
+                                        onLongClick = { menuVideo = item.video },
+                                        modifier = Modifier.animateItem()
+                                    )
+                                    is LocalVideoDisplayItem.Group -> VideoGroupCard(
+                                        group = item,
+                                        onClick = { groupPlaybackTarget = item },
+                                        onLongClick = { menuGroup = item },
+                                        modifier = Modifier.animateItem()
+                                    )
+                                }
+                            }
                         }
                     } else {
-                        gridItems(filteredItems, key = { it.key }) { item -> renderItem(item) }
+                        gridItems(filteredItems, key = { it.key }) { item ->
+                            when (item) {
+                                is LocalVideoDisplayItem.Single -> LocalVideoCard(
+                                    video = item.video,
+                                    showThumbnail = state.appSettings.videoThumbnailsEnabled,
+                                    isPlayed = item.isPlayed,
+                                    onClick = { onPlayVideo(item.video.filePath, item.video.name, false) },
+                                    onLongClick = { menuVideo = item.video },
+                                    modifier = Modifier.animateItem()
+                                )
+                                is LocalVideoDisplayItem.Group -> VideoGroupCard(
+                                    group = item,
+                                    onClick = { groupPlaybackTarget = item },
+                                    onLongClick = { menuGroup = item },
+                                    modifier = Modifier.animateItem()
+                                )
+                            }
+                        }
                     }
                 }
             }
