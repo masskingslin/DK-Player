@@ -1,6 +1,7 @@
 package com.dk.tvplayer.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
@@ -15,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -24,15 +27,22 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dk.tvplayer.data.local.TvChannelEntity
 import com.dk.tvplayer.ui.TvPlayerViewModel
@@ -41,6 +51,7 @@ import com.dk.tvplayer.ui.components.TvEpgOverlay
 import com.dk.tvplayer.ui.components.TvPlayerControls
 import com.dk.tvplayer.ui.components.TvPlayerSurface
 import com.dk.tvplayer.ui.library.SortMenuButton
+import com.dk.tvplayer.ui.theme.DkShapes
 
 @Composable
 fun TvMainScreen(viewModel: TvPlayerViewModel) {
@@ -103,12 +114,23 @@ fun TvMainScreen(viewModel: TvPlayerViewModel) {
             modifier = Modifier
                 .width(360.dp)
                 .fillMaxHeight()
-                .background(MaterialTheme.colorScheme.surface)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.surface,
+                            MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    )
+                )
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
+                )
                 .padding(16.dp)
         ) {
             Text(
                 text = "DK-Player TV",
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(12.dp))
@@ -133,22 +155,10 @@ fun TvMainScreen(viewModel: TvPlayerViewModel) {
                     .height(90.dp)
             ) {
                 items(state.categories) { category ->
-                    Text(
-                        text = category,
-                        style = if (state.selectedCategory == category) {
-                            MaterialTheme.typography.titleMedium
-                        } else {
-                            MaterialTheme.typography.bodyMedium
-                        },
-                        color = if (state.selectedCategory == category) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { viewModel.selectCategory(category) }
-                            .padding(vertical = 4.dp)
+                    CategoryChip(
+                        label = category,
+                        isSelected = state.selectedCategory == category,
+                        onClick = { viewModel.selectCategory(category) }
                     )
                 }
             }
@@ -207,24 +217,81 @@ fun TvMainScreen(viewModel: TvPlayerViewModel) {
     }
 }
 
+/**
+ * A sidebar category filter styled as a pill chip. TV navigation is driven entirely
+ * by D-pad focus rather than touch, so the focused-but-not-yet-selected state needs
+ * its own clearly visible treatment (an outline + slight scale-up) distinct from the
+ * "currently selected" filled state — otherwise a user moving the D-pad has no idea
+ * which row they're about to press.
+ */
+@Composable
+private fun CategoryChip(
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (isFocused) 1.03f else 1f, label = "categoryScale")
+    val containerColor by animateColorAsState(
+        when {
+            isSelected -> MaterialTheme.colorScheme.primary
+            isFocused -> MaterialTheme.colorScheme.surfaceVariant
+            else -> Color.Transparent
+        },
+        label = "categoryContainer"
+    )
+    val contentColor = when {
+        isSelected -> MaterialTheme.colorScheme.onPrimary
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+
+    Text(
+        text = label,
+        style = if (isSelected) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
+        color = contentColor,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .clip(DkShapes.pill)
+            .background(containerColor)
+            .onFocusChanged { isFocused = it.isFocused }
+            .clickable { onClick() }
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+    )
+}
+
 @Composable
 fun TvChannelRow(
     channel: TvChannelEntity,
     isSelected: Boolean,
     onSelect: () -> Unit
 ) {
+    var isFocused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (isFocused) 1.02f else 1f, label = "channelScale")
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
+            .scale(scale)
+            .onFocusChanged { isFocused = it.isFocused }
+            .border(
+                width = if (isFocused) 2.dp else 0.dp,
+                color = MaterialTheme.colorScheme.primary,
+                shape = DkShapes.medium
+            )
             .clickable(onClick = onSelect),
+        shape = DkShapes.medium,
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant
+            containerColor = when {
+                isSelected -> MaterialTheme.colorScheme.primaryContainer
+                isFocused -> MaterialTheme.colorScheme.surfaceVariant
+                else -> MaterialTheme.colorScheme.surface
             }
-        )
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isFocused) 4.dp else 0.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
@@ -234,7 +301,9 @@ fun TvChannelRow(
                     MaterialTheme.colorScheme.onPrimaryContainer
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
-                }
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = channel.groupTitle,
