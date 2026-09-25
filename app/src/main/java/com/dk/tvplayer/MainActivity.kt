@@ -33,6 +33,8 @@ import com.dk.tvplayer.ui.PhoneAppRoot
 import com.dk.tvplayer.ui.TvPlayerViewModel
 import com.dk.tvplayer.ui.screens.TvMainScreen
 import com.dk.tvplayer.ui.theme.dkColorScheme
+import com.dk.tvplayer.ui.theme.dkShapes
+import com.dk.tvplayer.ui.theme.dkTypography
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
@@ -91,7 +93,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            MaterialTheme(colorScheme = colorScheme) {
+            MaterialTheme(colorScheme = colorScheme, typography = dkTypography, shapes = dkShapes) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
