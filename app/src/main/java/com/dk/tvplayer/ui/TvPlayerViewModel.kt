@@ -12,6 +12,8 @@ import com.dk.tvplayer.data.local.AppThemeMode
 import com.dk.tvplayer.data.local.LocalVideoItem
 import com.dk.tvplayer.data.local.PlaylistEntity
 import com.dk.tvplayer.data.local.PlaylistItemEntity
+import com.dk.tvplayer.data.local.QueueFormat
+import com.dk.tvplayer.data.local.QueueInfoPosition
 import com.dk.tvplayer.data.local.SettingsDataStore
 import com.dk.tvplayer.data.local.SortOption
 import com.dk.tvplayer.data.local.StreamEntity
@@ -131,6 +133,14 @@ class TvPlayerViewModel(
                 playerManager.setBackgroundPlaybackEnabled(settings.backgroundAudioPlayback)
                 playerManager.setCastAudioOnly(settings.castAudioOnly)
                 playerManager.setWirelessCastingEnabled(settings.wirelessCastingEnabled)
+                playerManager.setDefaultPlaybackSpeedSetting(settings.defaultPlaybackSpeed)
+                playerManager.setAndroidAutoTitleTextScale(settings.androidAutoTitleTextScale)
+                playerManager.setAndroidAutoSubtitleTextScale(settings.androidAutoSubtitleTextScale)
+                playerManager.setAndroidAutoQueueInfoPosition(settings.androidAutoQueueInfoPosition)
+                playerManager.setAndroidAutoQueueFormat(settings.androidAutoQueueFormat)
+                playerManager.setAndroidAutoUseGlobalPlaybackSpeed(settings.androidAutoUseGlobalPlaybackSpeed)
+                playerManager.setAndroidAutoPlaybackSpeedControlEnabled(settings.androidAutoPlaybackSpeedControlEnabled)
+                playerManager.setAndroidAutoSeekButtonsEnabled(settings.androidAutoSeekButtonsEnabled)
                 applyLocaleIfNeeded(settings.appLanguage)
             }
         }
@@ -261,8 +271,19 @@ class TvPlayerViewModel(
             channel.streamUrl,
             title = channel.name,
             userAgent = channel.userAgent,
-            referrer = channel.referrer
+            referrer = channel.referrer,
+            subtitle = channel.groupTitle.takeIf { it.isNotBlank() }
         )
+        // Reflects this channel's place within the currently browsed/filtered channel
+        // list in Android Auto's "Queue information" — e.g. "12/48" — since IPTV
+        // channel surfing is this app's closest thing to a queue.
+        val channelList = _uiState.value.filteredChannels
+        val index = channelList.indexOfFirst { it.channelId == channel.channelId }
+        if (index >= 0) {
+            playerManager.updateAndroidAutoQueueContext(index + 1, channelList.size)
+        } else {
+            playerManager.updateAndroidAutoQueueContext(null, null)
+        }
         observeEpg(channel.channelId)
     }
 
@@ -299,8 +320,20 @@ class TvPlayerViewModel(
                 startPositionMs = startPositionMs,
                 title = title,
                 userAgent = matchingChannel?.userAgent,
-                referrer = matchingChannel?.referrer
+                referrer = matchingChannel?.referrer,
+                subtitle = matchingChannel?.groupTitle?.takeIf { it.isNotBlank() }
             )
+            if (matchingChannel != null) {
+                val channelList = _uiState.value.filteredChannels
+                val index = channelList.indexOfFirst { it.channelId == matchingChannel.channelId }
+                if (index >= 0) {
+                    playerManager.updateAndroidAutoQueueContext(index + 1, channelList.size)
+                }
+            } else {
+                // A plain video/custom stream has no known "queue" — clear any leftover
+                // position from whatever was playing before.
+                playerManager.updateAndroidAutoQueueContext(null, null)
+            }
         }
     }
 
@@ -657,6 +690,43 @@ class TvPlayerViewModel(
 
     fun setCastAudioOnly(enabled: Boolean) {
         viewModelScope.launch { settingsDataStore.setCastAudioOnly(enabled) }
+    }
+
+    // ---- Android Auto ----
+
+    fun setAndroidAutoTitleTextScale(scale: Float) {
+        viewModelScope.launch { settingsDataStore.setAndroidAutoTitleTextScale(scale) }
+        playerManager.setAndroidAutoTitleTextScale(scale)
+    }
+
+    fun setAndroidAutoSubtitleTextScale(scale: Float) {
+        viewModelScope.launch { settingsDataStore.setAndroidAutoSubtitleTextScale(scale) }
+        playerManager.setAndroidAutoSubtitleTextScale(scale)
+    }
+
+    fun setAndroidAutoQueueInfoPosition(position: QueueInfoPosition) {
+        viewModelScope.launch { settingsDataStore.setAndroidAutoQueueInfoPosition(position) }
+        playerManager.setAndroidAutoQueueInfoPosition(position)
+    }
+
+    fun setAndroidAutoQueueFormat(format: QueueFormat) {
+        viewModelScope.launch { settingsDataStore.setAndroidAutoQueueFormat(format) }
+        playerManager.setAndroidAutoQueueFormat(format)
+    }
+
+    fun setAndroidAutoUseGlobalPlaybackSpeed(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.setAndroidAutoUseGlobalPlaybackSpeed(enabled) }
+        playerManager.setAndroidAutoUseGlobalPlaybackSpeed(enabled)
+    }
+
+    fun setAndroidAutoPlaybackSpeedControlEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.setAndroidAutoPlaybackSpeedControlEnabled(enabled) }
+        playerManager.setAndroidAutoPlaybackSpeedControlEnabled(enabled)
+    }
+
+    fun setAndroidAutoSeekButtonsEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.setAndroidAutoSeekButtonsEnabled(enabled) }
+        playerManager.setAndroidAutoSeekButtonsEnabled(enabled)
     }
 
     private fun applyLocaleIfNeeded(language: AppLanguage) {
