@@ -5,6 +5,7 @@ package com.dk.tvplayer.player
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import androidx.media3.cast.CastPlayer
 import androidx.media3.cast.SessionAvailabilityListener
 import androidx.media3.common.C
@@ -21,12 +22,20 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import androidx.core.content.ContextCompat
+import com.dk.tvplayer.R
+import com.dk.tvplayer.data.local.QueueFormat
+import com.dk.tvplayer.data.local.QueueInfoPosition
 import com.dk.tvplayer.data.parser.M3uParser
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -36,6 +45,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 data class SubtitleTrackInfo(
     val groupIndex: Int,
@@ -70,6 +80,22 @@ class TvExoPlayerManager(
 ) {
     companion object {
         private const val MAX_RETRY_ATTEMPTS = 3
+
+        // ---- Android Auto ----
+        // The package Android Auto's phone-side app connects to media sessions with.
+        // This is the standard "phone projecting to the car" setup the Settings ->
+        // Android Auto toggles are about; it doesn't cover every possible Android
+        // Automotive OS head unit, but it's the one documented, stable identifier for
+        // Android Auto itself (see AOSP's allowed_media_browser_callers.xml sample).
+        private const val ANDROID_AUTO_PACKAGE_NAME = "com.google.android.projection.gearhead"
+        private const val ACTION_SEEK_BACK = "com.dk.tvplayer.androidauto.SEEK_BACK"
+        private const val ACTION_SEEK_FORWARD = "com.dk.tvplayer.androidauto.SEEK_FORWARD"
+        private const val ACTION_CYCLE_SPEED = "com.dk.tvplayer.androidauto.CYCLE_SPEED"
+        private const val ANDROID_AUTO_SEEK_INCREMENT_MS = 10_000L
+        private val ANDROID_AUTO_SPEED_STEPS = listOf(1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 0.75f)
+        // Baseline character budget for the title/subtitle sent to Android Auto at a
+        // 1.0x text-size scale — see truncateForCarTextScale.
+        private const val ANDROID_AUTO_TEXT_BASE_LENGTH = 60
     }
 
     private val trackSelector = DefaultTrackSelector(context)
@@ -144,6 +170,11 @@ class TvExoPlayerManager(
 
     private var lastPlayedUrl: String? = null
     private var lastPlayedTitle: String? = null
+    // Undecorated subtitle (e.g. an IPTV channel's category) as passed into play() —
+    // kept separate from whatever ends up in the MediaItem's actual metadata so the
+    // Android Auto queue-position segment (see buildDecoratedSubtitle) never gets
+    // appended on top of itself across repeated metadata refreshes.
+    private var lastPlayedSubtitle: String? = null
     private var lastPlayedUserAgent: String? = null
     private var lastPlayedReferrer: String? = null
     private var retryAttempt = 0
@@ -158,9 +189,120 @@ class TvExoPlayerManager(
     private var forcedHlsRetry = false
     private var backgroundPlaybackEnabled = false
 
+    // ---- Android Auto settings (see SettingsDataStore's androidAuto* fields) ----
+    private var androidAutoTitleTextScale = 1.0f
+    private var androidAutoSubtitleTextScale = 1.0f
+    private var androidAutoQueueInfoPosition = QueueInfoPosition.BEFORE_SUBTITLE
+    private var androidAutoQueueFormat = QueueFormat.POSITION_SLASH_SIZE
+    private var androidAutoUseGlobalPlaybackSpeed = false
+    private var androidAutoPlaybackSpeedControlEnabled = false
+    private var androidAutoSeekButtonsEnabled = false
+    // The persisted app-wide "Default Playback Speed" (distinct from _playbackSpeed,
+    // which also tracks any one-off override made through the in-player speed menu) —
+    // only consulted when androidAutoUseGlobalPlaybackSpeed is on, see play().
+    private var defaultPlaybackSpeedSetting = 1.0f
+    // Where the currently playing item sits within whatever browsable list the caller
+    // knows about (e.g. the IPTV channel list being surfed) — null/null when there's no
+    // such context, in which case no queue segment is shown. Set via
+    // updateAndroidAutoQueueContext().
+    private var androidAutoQueuePosition: Int? = null
+    private var androidAutoQueueSize: Int? = null
+
+    private fun isAndroidAutoController(controller: MediaSession.ControllerInfo): Boolean =
+        controller.packageName == ANDROID_AUTO_PACKAGE_NAME
+
+    /**
+     * Builds the extra overflow buttons this controller should see, per the Settings ->
+     * Android Auto -> Controls toggles. Only Android Auto itself gets these — the
+     * phone's own notification controls are unaffected.
+     */
+    private fun buildAndroidAutoCustomLayout(controller: MediaSession.ControllerInfo): List<CommandButton> {
+        if (!isAndroidAutoController(controller)) return emptyList()
+        val buttons = mutableListOf<CommandButton>()
+        if (androidAutoSeekButtonsEnabled) {
+            buttons += CommandButton.Builder()
+                .setDisplayName("Rewind 10 seconds")
+                .setIconResId(android.R.drawable.ic_media_rew)
+                .setSessionCommand(SessionCommand(ACTION_SEEK_BACK, Bundle.EMPTY))
+                .build()
+            buttons += CommandButton.Builder()
+                .setDisplayName("Forward 10 seconds")
+                .setIconResId(android.R.drawable.ic_media_ff)
+                .setSessionCommand(SessionCommand(ACTION_SEEK_FORWARD, Bundle.EMPTY))
+                .build()
+        }
+        if (androidAutoPlaybackSpeedControlEnabled) {
+            buttons += CommandButton.Builder()
+                .setDisplayName("Playback speed")
+                .setIconResId(R.drawable.ic_playback_speed)
+                .setSessionCommand(SessionCommand(ACTION_CYCLE_SPEED, Bundle.EMPTY))
+                .build()
+        }
+        return buttons
+    }
+
+    /** Pushes an updated overflow layout to any already-connected Android Auto controller —
+     *  called whenever one of the Controls toggles changes while the car is connected. */
+    private fun refreshAndroidAutoCustomLayout() {
+        mediaSession.connectedControllers
+            .filter { isAndroidAutoController(it) }
+            .forEach { controller -> mediaSession.setCustomLayout(controller, buildAndroidAutoCustomLayout(controller)) }
+    }
+
+    private fun cycleAndroidAutoPlaybackSpeed() {
+        val current = localPlayer.playbackParameters.speed
+        val currentIndex = ANDROID_AUTO_SPEED_STEPS.indexOfFirst { abs(it - current) < 0.01f }
+        val next = ANDROID_AUTO_SPEED_STEPS[(currentIndex + 1).coerceAtLeast(0) % ANDROID_AUTO_SPEED_STEPS.size]
+        setPlaybackSpeed(next)
+    }
+
+    private val androidAutoSessionCallback = object : MediaSession.Callback {
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo
+        ): MediaSession.ConnectionResult {
+            val availableSessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+                .add(SessionCommand(ACTION_SEEK_BACK, Bundle.EMPTY))
+                .add(SessionCommand(ACTION_SEEK_FORWARD, Bundle.EMPTY))
+                .add(SessionCommand(ACTION_CYCLE_SPEED, Bundle.EMPTY))
+                .build()
+            refreshSessionMetadataForCar()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(availableSessionCommands)
+                .setCustomLayout(buildAndroidAutoCustomLayout(controller))
+                .build()
+        }
+
+        override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
+            if (isAndroidAutoController(controller)) {
+                // Drop back to the un-truncated title/subtitle now that the car (the
+                // only reason the metadata was shortened/queue-decorated) is gone.
+                refreshSessionMetadataForCar()
+            }
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle
+        ): ListenableFuture<SessionResult> {
+            when (customCommand.customAction) {
+                // seekTo() itself clamps into [0, duration], so the raw arithmetic here
+                // doesn't need its own bounds-checking.
+                ACTION_SEEK_BACK -> seekTo(_activePlayer.value.currentPosition - ANDROID_AUTO_SEEK_INCREMENT_MS)
+                ACTION_SEEK_FORWARD -> seekTo(_activePlayer.value.currentPosition + ANDROID_AUTO_SEEK_INCREMENT_MS)
+                ACTION_CYCLE_SPEED -> cycleAndroidAutoPlaybackSpeed()
+            }
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
+    }
+
     /** Wraps localPlayer so PlaybackService (and, if ever needed, other controllers) can
      *  discover and control the same player instance the UI is using. */
-    val mediaSession: MediaSession = MediaSession.Builder(context, localPlayer).build()
+    val mediaSession: MediaSession = MediaSession.Builder(context, localPlayer)
+        .setCallback(androidAutoSessionCallback)
+        .build()
 
     /** Called by the ViewModel whenever the "Background Audio Playback" setting changes. */
     fun setBackgroundPlaybackEnabled(enabled: Boolean) {
@@ -241,6 +383,9 @@ class TvExoPlayerManager(
      * @param referrer Per-stream Referer override, same source. Many channels in large
      * aggregated playlists (e.g. iptv-org's index.m3u) are hosted behind CDNs that 403
      * requests missing this — VLC/Kodi apply it per-channel, so we do too.
+     * @param subtitle Optional secondary line (e.g. an IPTV channel's category) shown
+     * under the title — also where the Android Auto "Queue information" segment gets
+     * stitched in, see buildDecoratedSubtitle.
      */
     fun play(
         url: String,
@@ -248,21 +393,30 @@ class TvExoPlayerManager(
         title: String? = null,
         forceHlsMimeType: Boolean = false,
         userAgent: String? = null,
-        referrer: String? = null
+        referrer: String? = null,
+        subtitle: String? = null
     ) {
         lastPlayedUrl = url
         lastPlayedTitle = title ?: lastPlayedTitle
+        lastPlayedSubtitle = subtitle
         lastPlayedUserAgent = userAgent
         lastPlayedReferrer = referrer
         retryAttempt = 0
         forcedHlsRetry = forceHlsMimeType
         _playbackError.value = null
         retryJob?.cancel()
+        // A fresh play() call starts a new "now playing" item with no known queue
+        // context until the caller says otherwise via updateAndroidAutoQueueContext —
+        // otherwise a stale "3/12" from the previous item could linger onto this one.
+        androidAutoQueuePosition = null
+        androidAutoQueueSize = null
 
         val target = _activePlayer.value
+        val metadataBuilder = MediaMetadata.Builder().setTitle(lastPlayedTitle ?: "")
+        if (!subtitle.isNullOrBlank()) metadataBuilder.setSubtitle(subtitle)
         val mediaItemBuilder = MediaItem.Builder()
             .setUri(url)
-            .setMediaMetadata(MediaMetadata.Builder().setTitle(lastPlayedTitle ?: "").build())
+            .setMediaMetadata(metadataBuilder.build())
         if (forceHlsMimeType) {
             mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
         }
@@ -297,7 +451,14 @@ class TvExoPlayerManager(
         }
         target.prepare()
         target.playWhenReady = true
-        target.setPlaybackSpeed(_playbackSpeed.value)
+        // Normally whatever speed was last active (including a one-off override from
+        // the in-player speed menu) carries forward to the next item. When "Use the
+        // global playback speed" is on, every new item instead starts fresh at the
+        // persisted Default Playback Speed, ignoring that carry-over.
+        val speedToApply = if (androidAutoUseGlobalPlaybackSpeed) defaultPlaybackSpeedSetting else _playbackSpeed.value
+        _playbackSpeed.value = speedToApply
+        target.setPlaybackSpeed(speedToApply)
+        refreshSessionMetadataForCar()
     }
 
     fun togglePlayPause() {
@@ -376,6 +537,7 @@ class TvExoPlayerManager(
             // instead of burning through the normal backoff retries.
             if (!forcedHlsRetry) {
                 retryJob?.cancel()
+                val queueContext = androidAutoQueuePosition to androidAutoQueueSize
                 retryJob = scope.launch {
                     val url = lastPlayedUrl ?: return@launch
                     val position = _activePlayer.value.currentPosition
@@ -385,8 +547,12 @@ class TvExoPlayerManager(
                         lastPlayedTitle,
                         forceHlsMimeType = true,
                         userAgent = lastPlayedUserAgent,
-                        referrer = lastPlayedReferrer
+                        referrer = lastPlayedReferrer,
+                        subtitle = lastPlayedSubtitle
                     )
+                    // Same item, just forcing the HLS mimetype — restore queue context
+                    // that play() otherwise clears for what it treats as a new item.
+                    updateAndroidAutoQueueContext(queueContext.first, queueContext.second)
                 }
             }
             return
@@ -439,14 +605,19 @@ class TvExoPlayerManager(
         // with a User-Agent/Referer override) would silently drop back to plain
         // defaults and immediately fail again the same way.
         val channel = lastPlayedUserAgent to lastPlayedReferrer
+        val queueContext = androidAutoQueuePosition to androidAutoQueueSize
         play(
             url,
             position,
             lastPlayedTitle,
             forceHlsMimeType = forcedHlsRetry,
             userAgent = channel.first,
-            referrer = channel.second
+            referrer = channel.second,
+            subtitle = lastPlayedSubtitle
         )
+        // play() unconditionally clears queue context for what it treats as a "new"
+        // item — but a retry is the same item, so restore it.
+        updateAndroidAutoQueueContext(queueContext.first, queueContext.second)
     }
 
     fun clearError() {
@@ -636,7 +807,7 @@ class TvExoPlayerManager(
         _isCasting.value = false
         val url = lastPlayedUrl
         if (url != null) {
-            play(url, position, lastPlayedTitle)
+            play(url, position, lastPlayedTitle, subtitle = lastPlayedSubtitle)
         }
     }
 
@@ -662,6 +833,145 @@ class TvExoPlayerManager(
             castPlayer = null
             _isCastAvailable.value = false
         }
+    }
+
+    // ---- Android Auto ----
+
+    fun setAndroidAutoTitleTextScale(scale: Float) {
+        androidAutoTitleTextScale = scale
+        refreshSessionMetadataForCar()
+    }
+
+    fun setAndroidAutoSubtitleTextScale(scale: Float) {
+        androidAutoSubtitleTextScale = scale
+        refreshSessionMetadataForCar()
+    }
+
+    fun setAndroidAutoQueueInfoPosition(position: QueueInfoPosition) {
+        androidAutoQueueInfoPosition = position
+        refreshSessionMetadataForCar()
+    }
+
+    fun setAndroidAutoQueueFormat(format: QueueFormat) {
+        androidAutoQueueFormat = format
+        refreshSessionMetadataForCar()
+    }
+
+    fun setAndroidAutoUseGlobalPlaybackSpeed(enabled: Boolean) {
+        androidAutoUseGlobalPlaybackSpeed = enabled
+    }
+
+    fun setAndroidAutoPlaybackSpeedControlEnabled(enabled: Boolean) {
+        androidAutoPlaybackSpeedControlEnabled = enabled
+        refreshAndroidAutoCustomLayout()
+    }
+
+    fun setAndroidAutoSeekButtonsEnabled(enabled: Boolean) {
+        androidAutoSeekButtonsEnabled = enabled
+        refreshAndroidAutoCustomLayout()
+    }
+
+    /** Mirrors the persisted "Default Playback Speed" setting — see the doc comment on
+     *  defaultPlaybackSpeedSetting for why this is tracked separately from _playbackSpeed. */
+    fun setDefaultPlaybackSpeedSetting(speed: Float) {
+        defaultPlaybackSpeedSetting = speed
+    }
+
+    /**
+     * Lets a caller that knows the current item's place within a browsable list (e.g.
+     * the IPTV channel list currently being surfed) report it, purely so it can be
+     * reflected in the "Queue information" Android Auto metadata. Pass null/null when
+     * there's no such context (e.g. a single local video with nothing "before" or
+     * "after" it) so no queue segment is shown.
+     */
+    fun updateAndroidAutoQueueContext(position: Int?, size: Int?) {
+        androidAutoQueuePosition = position
+        androidAutoQueueSize = size
+        refreshSessionMetadataForCar()
+    }
+
+    /**
+     * Android Auto doesn't expose a font-size API to apps — the car head unit is what
+     * actually renders the metadata text. What we *can* influence is how much of a long
+     * title/subtitle fits on the fixed-width car display before Android Auto has to
+     * clip it awkwardly: a larger "text size" here maps to a shorter kept length, on
+     * the assumption bigger glyphs leave less horizontal room. Applied only while
+     * Android Auto is actually connected (see refreshSessionMetadataForCar), so it
+     * never shortens the title shown in the app's own UI, notification, or lock screen
+     * when the car isn't in the picture.
+     */
+    private fun truncateForCarTextScale(text: String, scale: Float): String {
+        val maxLength = (ANDROID_AUTO_TEXT_BASE_LENGTH / scale.coerceAtLeast(0.1f)).toInt().coerceAtLeast(12)
+        return if (text.length <= maxLength) text else text.take(maxLength - 1).trimEnd() + "…"
+    }
+
+    /** The "N/M"-style (or similar) segment described by androidAutoQueueFormat, or
+     *  null when there's no queue context or a "queue" of a single item to describe. */
+    private fun androidAutoQueueSegment(): String? {
+        if (androidAutoQueueInfoPosition == QueueInfoPosition.DISABLED) return null
+        val position = androidAutoQueuePosition ?: return null
+        val size = androidAutoQueueSize ?: return null
+        if (size <= 1) return null
+        return when (androidAutoQueueFormat) {
+            QueueFormat.POSITION_SLASH_SIZE -> "$position/$size"
+            QueueFormat.POSITION_ONLY -> "$position"
+            QueueFormat.TRACKS_REMAINING -> {
+                val remaining = (size - position).coerceAtLeast(0)
+                if (remaining == 1) "1 track remaining" else "$remaining tracks remaining"
+            }
+        }
+    }
+
+    /** Stitches the queue segment above into the base (undecorated) subtitle, per
+     *  androidAutoQueueInfoPosition. Returns the base subtitle unchanged if there's no
+     *  segment to add. */
+    private fun buildDecoratedSubtitle(baseSubtitle: String?): String? {
+        val segment = androidAutoQueueSegment() ?: return baseSubtitle
+        return when (androidAutoQueueInfoPosition) {
+            QueueInfoPosition.BEFORE_SUBTITLE ->
+                if (baseSubtitle.isNullOrBlank()) segment else "$segment · $baseSubtitle"
+            QueueInfoPosition.AFTER_SUBTITLE ->
+                if (baseSubtitle.isNullOrBlank()) segment else "$baseSubtitle · $segment"
+            QueueInfoPosition.DISABLED -> baseSubtitle
+        }
+    }
+
+    /**
+     * Rebuilds the current MediaItem's title/subtitle metadata from the pristine
+     * lastPlayedTitle/lastPlayedSubtitle (never from whatever's already in the
+     * MediaItem, which may already be decorated from a previous call — reading that
+     * back would compound the queue segment on every refresh) and pushes it via
+     * replaceMediaItem, which updates the session's metadata without restarting
+     * playback or losing position.
+     *
+     * Note this metadata is shared by every surface reading this MediaSession (the
+     * phone notification and lock screen included) — Media3 has no per-controller
+     * metadata, so while Android Auto is connected, its car-sized truncation is what
+     * the phone notification shows too. That's why it's only applied while a car is
+     * actually connected rather than unconditionally.
+     */
+    private fun refreshSessionMetadataForCar() {
+        if (localPlayer.mediaItemCount == 0) return
+        val current = localPlayer.currentMediaItem ?: return
+        val carConnected = mediaSession.connectedControllers.any { isAndroidAutoController(it) }
+
+        val baseTitle = lastPlayedTitle?.takeIf { it.isNotBlank() } ?: ""
+        val decoratedSubtitle = buildDecoratedSubtitle(lastPlayedSubtitle)
+
+        val newTitle = if (carConnected) truncateForCarTextScale(baseTitle, androidAutoTitleTextScale) else baseTitle
+        val newSubtitle = when {
+            decoratedSubtitle.isNullOrBlank() -> null
+            carConnected -> truncateForCarTextScale(decoratedSubtitle, androidAutoSubtitleTextScale)
+            else -> decoratedSubtitle
+        }
+
+        val metadataBuilder = current.mediaMetadata.buildUpon().setTitle(newTitle)
+        if (newSubtitle != null) metadataBuilder.setSubtitle(newSubtitle)
+        val updatedMetadata = metadataBuilder.build()
+        if (updatedMetadata == current.mediaMetadata) return
+
+        val index = localPlayer.currentMediaItemIndex
+        localPlayer.replaceMediaItem(index, current.buildUpon().setMediaMetadata(updatedMetadata).build())
     }
 
     fun release() {
