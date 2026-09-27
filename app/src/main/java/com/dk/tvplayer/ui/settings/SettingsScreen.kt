@@ -58,6 +58,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.dk.tvplayer.data.local.AppLanguage
 import com.dk.tvplayer.data.local.AppThemeMode
+import com.dk.tvplayer.data.local.QueueFormat
+import com.dk.tvplayer.data.local.QueueInfoPosition
 import com.dk.tvplayer.data.local.SubtitleColorPreset
 import com.dk.tvplayer.data.local.SubtitleTextSize
 import com.dk.tvplayer.data.local.VideoResolutionCap
@@ -245,6 +247,94 @@ fun SettingsScreen(
                         "screen, but doesn't reduce the data actually sent.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(text = "Android Auto", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Interface",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text("Title text size", style = MaterialTheme.typography.titleMedium)
+                Slider(
+                    value = settings.androidAutoTitleTextScale,
+                    onValueChange = { viewModel.setAndroidAutoTitleTextScale(it) },
+                    valueRange = 0.8f..1.4f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Subtitle text size", style = MaterialTheme.typography.titleMedium)
+                Slider(
+                    value = settings.androidAutoSubtitleTextScale,
+                    onValueChange = { viewModel.setAndroidAutoSubtitleTextScale(it) },
+                    valueRange = 0.8f..1.4f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+                SettingSelectItem(
+                    title = "Queue information",
+                    selected = settings.androidAutoQueueInfoPosition,
+                    options = QueueInfoPosition.entries,
+                    optionLabel = { it.label },
+                    onSelect = { viewModel.setAndroidAutoQueueInfoPosition(it) }
+                )
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+                SettingSelectItem(
+                    title = "Queue format",
+                    selected = settings.androidAutoQueueFormat,
+                    options = QueueFormat.entries,
+                    optionLabel = { it.label },
+                    onSelect = { viewModel.setAndroidAutoQueueFormat(it) }
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+
+                Text(
+                    text = "Controls",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                SettingToggleItem(
+                    title = "Use the global playback speed",
+                    subtitle = "Use the playback speed set globally for all the tracks. " +
+                        "Individual tracks' playback speed will be ignored.",
+                    checked = settings.androidAutoUseGlobalPlaybackSpeed,
+                    onCheckedChange = { viewModel.setAndroidAutoUseGlobalPlaybackSpeed(it) }
+                )
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+                SettingToggleItem(
+                    title = "Android Auto playback speed",
+                    subtitle = "Show speed control in the overflow menu",
+                    checked = settings.androidAutoPlaybackSpeedControlEnabled,
+                    onCheckedChange = { viewModel.setAndroidAutoPlaybackSpeedControlEnabled(it) }
+                )
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+                SettingToggleItem(
+                    title = "Android Auto seek buttons",
+                    subtitle = "Show rewind and fast forward in the overflow menu. Try holding " +
+                        "steering wheel previous and next buttons before enabling.",
+                    checked = settings.androidAutoSeekButtonsEnabled,
+                    onCheckedChange = { viewModel.setAndroidAutoSeekButtonsEnabled(it) }
                 )
             }
         }
@@ -507,6 +597,55 @@ private fun Box(color: Color, isSelected: Boolean, onClick: () -> Unit) {
     ) {
         if (isSelected) {
             Icon(Icons.Default.Check, contentDescription = null, tint = Color.White)
+        }
+    }
+}
+
+/**
+ * A tappable "current value" row (title + the selected option's label underneath) that
+ * opens a dropdown of [options] to pick from — used for Android Auto's "Queue
+ * information" / "Queue format" pickers, similar in spirit to an Android ListPreference.
+ */
+@Composable
+fun <T> SettingSelectItem(
+    title: String,
+    selected: T,
+    options: List<T>,
+    optionLabel: (T) -> String,
+    onSelect: (T) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = true },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = title, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = optionLabel(selected),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(optionLabel(option)) },
+                    leadingIcon = {
+                        if (option == selected) {
+                            Icon(Icons.Default.Check, contentDescription = null)
+                        }
+                    },
+                    onClick = {
+                        onSelect(option)
+                        expanded = false
+                    }
+                )
+            }
         }
     }
 }
