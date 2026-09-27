@@ -93,7 +93,28 @@ data class AppSettings(
     // track before it reaches the Cast receiver, it can only present the session as
     // an audio track so the receiver shows its audio-styled UI instead of a video one.
     val wirelessCastingEnabled: Boolean = true,
-    val castAudioOnly: Boolean = false
+    val castAudioOnly: Boolean = false,
+    // ---- Android Auto ----
+    // Android Auto doesn't let an app control the car head unit's actual font
+    // rendering; these scale how aggressively the title/subtitle metadata sent to it
+    // gets truncated (see TvExoPlayerManager.truncateForCarTextScale) so long text
+    // doesn't clip awkwardly on the car's fixed-width display. 1.0 = no extra
+    // shortening beyond the normal baseline.
+    val androidAutoTitleTextScale: Float = 1.0f,
+    val androidAutoSubtitleTextScale: Float = 1.0f,
+    val androidAutoQueueInfoPosition: QueueInfoPosition = QueueInfoPosition.BEFORE_SUBTITLE,
+    val androidAutoQueueFormat: QueueFormat = QueueFormat.POSITION_SLASH_SIZE,
+    // Forces every new item played to start at the app-wide Default Playback Speed
+    // rather than whatever speed was last left active via the in-player speed menu —
+    // handy so a track sped up for one drive doesn't silently carry over to the next.
+    val androidAutoUseGlobalPlaybackSpeed: Boolean = false,
+    // Adds a "Playback speed" button to Android Auto's overflow menu that cycles
+    // through a fixed set of common speeds.
+    val androidAutoPlaybackSpeedControlEnabled: Boolean = false,
+    // Adds "Rewind 10s" / "Forward 10s" buttons to Android Auto's overflow menu. Many
+    // cars already map the steering wheel's previous/next buttons to seeking when held,
+    // so it's worth trying that first before turning this on.
+    val androidAutoSeekButtonsEnabled: Boolean = false
 )
 
 enum class SubtitleTextSize(val label: String, val sp: Float) {
@@ -108,6 +129,25 @@ enum class SubtitleColorPreset(val label: String, val colorArgb: Int) {
     YELLOW("Yellow", 0xFFFFEB3B.toInt()),
     CYAN("Cyan", 0xFF18FFFF.toInt()),
     GREEN("Green", 0xFF69F0AE.toInt())
+}
+
+/**
+ * Where the "queue position / queue size" segment (see [QueueFormat]) is stitched into
+ * the subtitle text shown for the current item — used both by Android Auto's Now
+ * Playing screen and, since the metadata is shared across every surface reading the
+ * same MediaSession, the phone's own notification/lock screen while a queue exists.
+ */
+enum class QueueInfoPosition(val label: String) {
+    DISABLED("Disabled"),
+    BEFORE_SUBTITLE("Before subtitle"),
+    AFTER_SUBTITLE("After subtitle")
+}
+
+/** How the queue segment itself is worded, when [QueueInfoPosition] isn't DISABLED. */
+enum class QueueFormat(val label: String) {
+    POSITION_SLASH_SIZE("Queue position / Queue size"),
+    POSITION_ONLY("Queue position"),
+    TRACKS_REMAINING("Tracks remaining")
 }
 
 /**
@@ -135,6 +175,13 @@ class SettingsDataStore(private val context: Context) {
         val APP_LANGUAGE = stringPreferencesKey("app_language")
         val WIRELESS_CASTING_ENABLED = booleanPreferencesKey("wireless_casting_enabled")
         val CAST_AUDIO_ONLY = booleanPreferencesKey("cast_audio_only")
+        val ANDROID_AUTO_TITLE_TEXT_SCALE = stringPreferencesKey("android_auto_title_text_scale")
+        val ANDROID_AUTO_SUBTITLE_TEXT_SCALE = stringPreferencesKey("android_auto_subtitle_text_scale")
+        val ANDROID_AUTO_QUEUE_INFO_POSITION = stringPreferencesKey("android_auto_queue_info_position")
+        val ANDROID_AUTO_QUEUE_FORMAT = stringPreferencesKey("android_auto_queue_format")
+        val ANDROID_AUTO_USE_GLOBAL_PLAYBACK_SPEED = booleanPreferencesKey("android_auto_use_global_playback_speed")
+        val ANDROID_AUTO_PLAYBACK_SPEED_CONTROL = booleanPreferencesKey("android_auto_playback_speed_control")
+        val ANDROID_AUTO_SEEK_BUTTONS = booleanPreferencesKey("android_auto_seek_buttons")
     }
 
     val settingsFlow: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -166,7 +213,18 @@ class SettingsDataStore(private val context: Context) {
                 ?.let { runCatching { AppLanguage.valueOf(it) }.getOrNull() }
                 ?: AppLanguage.SYSTEM_DEFAULT,
             wirelessCastingEnabled = prefs[Keys.WIRELESS_CASTING_ENABLED] ?: true,
-            castAudioOnly = prefs[Keys.CAST_AUDIO_ONLY] ?: false
+            castAudioOnly = prefs[Keys.CAST_AUDIO_ONLY] ?: false,
+            androidAutoTitleTextScale = prefs[Keys.ANDROID_AUTO_TITLE_TEXT_SCALE]?.toFloatOrNull() ?: 1.0f,
+            androidAutoSubtitleTextScale = prefs[Keys.ANDROID_AUTO_SUBTITLE_TEXT_SCALE]?.toFloatOrNull() ?: 1.0f,
+            androidAutoQueueInfoPosition = prefs[Keys.ANDROID_AUTO_QUEUE_INFO_POSITION]
+                ?.let { runCatching { QueueInfoPosition.valueOf(it) }.getOrNull() }
+                ?: QueueInfoPosition.BEFORE_SUBTITLE,
+            androidAutoQueueFormat = prefs[Keys.ANDROID_AUTO_QUEUE_FORMAT]
+                ?.let { runCatching { QueueFormat.valueOf(it) }.getOrNull() }
+                ?: QueueFormat.POSITION_SLASH_SIZE,
+            androidAutoUseGlobalPlaybackSpeed = prefs[Keys.ANDROID_AUTO_USE_GLOBAL_PLAYBACK_SPEED] ?: false,
+            androidAutoPlaybackSpeedControlEnabled = prefs[Keys.ANDROID_AUTO_PLAYBACK_SPEED_CONTROL] ?: false,
+            androidAutoSeekButtonsEnabled = prefs[Keys.ANDROID_AUTO_SEEK_BUTTONS] ?: false
         )
     }
 
@@ -198,6 +256,20 @@ class SettingsDataStore(private val context: Context) {
         context.dataStore.edit { it[Keys.WIRELESS_CASTING_ENABLED] = value }
     suspend fun setCastAudioOnly(value: Boolean) =
         context.dataStore.edit { it[Keys.CAST_AUDIO_ONLY] = value }
+    suspend fun setAndroidAutoTitleTextScale(value: Float) =
+        context.dataStore.edit { it[Keys.ANDROID_AUTO_TITLE_TEXT_SCALE] = value.toString() }
+    suspend fun setAndroidAutoSubtitleTextScale(value: Float) =
+        context.dataStore.edit { it[Keys.ANDROID_AUTO_SUBTITLE_TEXT_SCALE] = value.toString() }
+    suspend fun setAndroidAutoQueueInfoPosition(value: QueueInfoPosition) =
+        context.dataStore.edit { it[Keys.ANDROID_AUTO_QUEUE_INFO_POSITION] = value.name }
+    suspend fun setAndroidAutoQueueFormat(value: QueueFormat) =
+        context.dataStore.edit { it[Keys.ANDROID_AUTO_QUEUE_FORMAT] = value.name }
+    suspend fun setAndroidAutoUseGlobalPlaybackSpeed(value: Boolean) =
+        context.dataStore.edit { it[Keys.ANDROID_AUTO_USE_GLOBAL_PLAYBACK_SPEED] = value }
+    suspend fun setAndroidAutoPlaybackSpeedControlEnabled(value: Boolean) =
+        context.dataStore.edit { it[Keys.ANDROID_AUTO_PLAYBACK_SPEED_CONTROL] = value }
+    suspend fun setAndroidAutoSeekButtonsEnabled(value: Boolean) =
+        context.dataStore.edit { it[Keys.ANDROID_AUTO_SEEK_BUTTONS] = value }
 
     /** Bulk apply — used when importing a settings backup file. */
     suspend fun applyAll(settings: AppSettings) {
@@ -220,6 +292,13 @@ class SettingsDataStore(private val context: Context) {
             prefs[Keys.APP_LANGUAGE] = settings.appLanguage.name
             prefs[Keys.WIRELESS_CASTING_ENABLED] = settings.wirelessCastingEnabled
             prefs[Keys.CAST_AUDIO_ONLY] = settings.castAudioOnly
+            prefs[Keys.ANDROID_AUTO_TITLE_TEXT_SCALE] = settings.androidAutoTitleTextScale.toString()
+            prefs[Keys.ANDROID_AUTO_SUBTITLE_TEXT_SCALE] = settings.androidAutoSubtitleTextScale.toString()
+            prefs[Keys.ANDROID_AUTO_QUEUE_INFO_POSITION] = settings.androidAutoQueueInfoPosition.name
+            prefs[Keys.ANDROID_AUTO_QUEUE_FORMAT] = settings.androidAutoQueueFormat.name
+            prefs[Keys.ANDROID_AUTO_USE_GLOBAL_PLAYBACK_SPEED] = settings.androidAutoUseGlobalPlaybackSpeed
+            prefs[Keys.ANDROID_AUTO_PLAYBACK_SPEED_CONTROL] = settings.androidAutoPlaybackSpeedControlEnabled
+            prefs[Keys.ANDROID_AUTO_SEEK_BUTTONS] = settings.androidAutoSeekButtonsEnabled
         }
     }
 }
