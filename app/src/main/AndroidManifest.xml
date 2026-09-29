@@ -18,6 +18,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Required by PlatformScheduler (used to resume/retry offline downloads) for persisted JobScheduler jobs. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- "Pop-Up player": a real floating window that draws over other apps. This is a
+         special permission the user must grant from Settings (see FloatingPlayerService);
+         it can't be requested through the normal runtime-permission dialog. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <!-- Features: Universal Phone + TV Compatibility -->
     <uses-feature
@@ -71,6 +75,11 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+
+        <!-- "Pop-Up player": draggable floating video window over other apps -->
+        <service
+            android:name=".player.FloatingPlayerService"
+            android:exported="false" />
 
         <!-- Enables AppCompatDelegate.setApplicationLocales() to work app-wide (per-app
              language picker in Settings) even though MainActivity isn't an AppCompatActivity. -->
