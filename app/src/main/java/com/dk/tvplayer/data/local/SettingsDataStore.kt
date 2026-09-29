@@ -114,7 +114,11 @@ data class AppSettings(
     // Adds "Rewind 10s" / "Forward 10s" buttons to Android Auto's overflow menu. Many
     // cars already map the steering wheel's previous/next buttons to seeking when held,
     // so it's worth trying that first before turning this on.
-    val androidAutoSeekButtonsEnabled: Boolean = false
+    val androidAutoSeekButtonsEnabled: Boolean = false,
+    // ---- Player gesture controls (the "..." menu's "Control settings" item) ----
+    val gestureSeekEnabled: Boolean = true,
+    val gestureBrightnessVolumeEnabled: Boolean = true,
+    val doubleTapSeekEnabled: Boolean = true
 )
 
 enum class SubtitleTextSize(val label: String, val sp: Float) {
@@ -182,6 +186,9 @@ class SettingsDataStore(private val context: Context) {
         val ANDROID_AUTO_USE_GLOBAL_PLAYBACK_SPEED = booleanPreferencesKey("android_auto_use_global_playback_speed")
         val ANDROID_AUTO_PLAYBACK_SPEED_CONTROL = booleanPreferencesKey("android_auto_playback_speed_control")
         val ANDROID_AUTO_SEEK_BUTTONS = booleanPreferencesKey("android_auto_seek_buttons")
+        val GESTURE_SEEK_ENABLED = booleanPreferencesKey("gesture_seek_enabled")
+        val GESTURE_BRIGHTNESS_VOLUME_ENABLED = booleanPreferencesKey("gesture_brightness_volume_enabled")
+        val DOUBLE_TAP_SEEK_ENABLED = booleanPreferencesKey("double_tap_seek_enabled")
     }
 
     val settingsFlow: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -224,7 +231,10 @@ class SettingsDataStore(private val context: Context) {
                 ?: QueueFormat.POSITION_SLASH_SIZE,
             androidAutoUseGlobalPlaybackSpeed = prefs[Keys.ANDROID_AUTO_USE_GLOBAL_PLAYBACK_SPEED] ?: false,
             androidAutoPlaybackSpeedControlEnabled = prefs[Keys.ANDROID_AUTO_PLAYBACK_SPEED_CONTROL] ?: false,
-            androidAutoSeekButtonsEnabled = prefs[Keys.ANDROID_AUTO_SEEK_BUTTONS] ?: false
+            androidAutoSeekButtonsEnabled = prefs[Keys.ANDROID_AUTO_SEEK_BUTTONS] ?: false,
+            gestureSeekEnabled = prefs[Keys.GESTURE_SEEK_ENABLED] ?: true,
+            gestureBrightnessVolumeEnabled = prefs[Keys.GESTURE_BRIGHTNESS_VOLUME_ENABLED] ?: true,
+            doubleTapSeekEnabled = prefs[Keys.DOUBLE_TAP_SEEK_ENABLED] ?: true
         )
     }
 
@@ -270,6 +280,12 @@ class SettingsDataStore(private val context: Context) {
         context.dataStore.edit { it[Keys.ANDROID_AUTO_PLAYBACK_SPEED_CONTROL] = value }
     suspend fun setAndroidAutoSeekButtonsEnabled(value: Boolean) =
         context.dataStore.edit { it[Keys.ANDROID_AUTO_SEEK_BUTTONS] = value }
+    suspend fun setGestureSeekEnabled(value: Boolean) =
+        context.dataStore.edit { it[Keys.GESTURE_SEEK_ENABLED] = value }
+    suspend fun setGestureBrightnessVolumeEnabled(value: Boolean) =
+        context.dataStore.edit { it[Keys.GESTURE_BRIGHTNESS_VOLUME_ENABLED] = value }
+    suspend fun setDoubleTapSeekEnabled(value: Boolean) =
+        context.dataStore.edit { it[Keys.DOUBLE_TAP_SEEK_ENABLED] = value }
 
     /** Bulk apply — used when importing a settings backup file. */
     suspend fun applyAll(settings: AppSettings) {
@@ -299,6 +315,9 @@ class SettingsDataStore(private val context: Context) {
             prefs[Keys.ANDROID_AUTO_USE_GLOBAL_PLAYBACK_SPEED] = settings.androidAutoUseGlobalPlaybackSpeed
             prefs[Keys.ANDROID_AUTO_PLAYBACK_SPEED_CONTROL] = settings.androidAutoPlaybackSpeedControlEnabled
             prefs[Keys.ANDROID_AUTO_SEEK_BUTTONS] = settings.androidAutoSeekButtonsEnabled
+            prefs[Keys.GESTURE_SEEK_ENABLED] = settings.gestureSeekEnabled
+            prefs[Keys.GESTURE_BRIGHTNESS_VOLUME_ENABLED] = settings.gestureBrightnessVolumeEnabled
+            prefs[Keys.DOUBLE_TAP_SEEK_ENABLED] = settings.doubleTapSeekEnabled
         }
     }
 }

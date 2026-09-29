@@ -64,6 +64,21 @@ data class PlaylistEntity(
     val createdDate: Long = System.currentTimeMillis()
 )
 
+/** A saved timestamp within a specific piece of media, added from the player's "..."
+ *  menu — separate from HistoryEntity's single "resume position" per item, since a
+ *  video can have several bookmarked moments at once. */
+@Entity(tableName = "bookmarks")
+data class BookmarkEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val mediaUrl: String,
+    val mediaTitle: String,
+    val positionMs: Long,
+    // User-editable label, e.g. "Best scene" — defaults to a formatted timestamp if
+    // left blank when saving.
+    val label: String,
+    val createdDate: Long = System.currentTimeMillis()
+)
+
 @Entity(tableName = "playlist_items")
 data class PlaylistItemEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,

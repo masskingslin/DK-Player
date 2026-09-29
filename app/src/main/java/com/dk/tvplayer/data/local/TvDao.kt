@@ -9,6 +9,18 @@ import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
+interface BookmarkDao {
+    @Query("SELECT * FROM bookmarks WHERE mediaUrl = :mediaUrl ORDER BY positionMs ASC")
+    fun getBookmarksForMedia(mediaUrl: String): Flow<List<BookmarkEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBookmark(bookmark: BookmarkEntity): Long
+
+    @Delete
+    suspend fun deleteBookmark(bookmark: BookmarkEntity)
+}
+
+@Dao
 interface TvChannelDao {
     @Query("SELECT * FROM channels ORDER BY name ASC")
     fun getAllChannels(): Flow<List<TvChannelEntity>>
