@@ -8,6 +8,7 @@ import com.dk.tvplayer.data.backup.BackupBundle
 import com.dk.tvplayer.data.backup.BackupPlaylist
 import com.dk.tvplayer.data.backup.SettingsBackupManager
 import com.dk.tvplayer.data.local.AppLanguage
+import com.dk.tvplayer.data.local.BookmarkEntity
 import com.dk.tvplayer.data.local.AppThemeMode
 import com.dk.tvplayer.data.local.LocalVideoItem
 import com.dk.tvplayer.data.local.PlaylistEntity
@@ -494,6 +495,39 @@ class TvPlayerViewModel(
             val playlistId = repository.createPlaylist(name.ifBlank { "New Playlist" })
             items.forEach { (title, url) -> repository.addItemToPlaylist(playlistId, title, url) }
         }
+    }
+
+    /** Used by the player's "Save Playlist" menu item to add the currently playing item
+     *  to a playlist the person already has, as opposed to createPlaylistAndAddItem's
+     *  "make a brand new one" path. */
+    fun addToExistingPlaylist(playlistId: Long, title: String, url: String) {
+        viewModelScope.launch { repository.addItemToPlaylist(playlistId, title, url) }
+    }
+
+    // ---- Bookmarks (player's "..." menu) ----
+
+    fun getBookmarksForMedia(mediaUrl: String) = repository.getBookmarksForMedia(mediaUrl)
+
+    fun addBookmark(mediaUrl: String, mediaTitle: String, positionMs: Long, label: String) {
+        viewModelScope.launch { repository.addBookmark(mediaUrl, mediaTitle, positionMs, label) }
+    }
+
+    fun deleteBookmark(bookmark: BookmarkEntity) {
+        viewModelScope.launch { repository.deleteBookmark(bookmark) }
+    }
+
+    // ---- Player gesture controls ("Control settings" menu item) ----
+
+    fun setGestureSeekEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.setGestureSeekEnabled(enabled) }
+    }
+
+    fun setGestureBrightnessVolumeEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.setGestureBrightnessVolumeEnabled(enabled) }
+    }
+
+    fun setDoubleTapSeekEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.setDoubleTapSeekEnabled(enabled) }
     }
 
     fun renamePlaylist(playlist: PlaylistEntity, newName: String) {
