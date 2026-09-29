@@ -43,6 +43,16 @@ object PipState {
     var isVideoPlayerActive: Boolean = false
 }
 
+/**
+ * Set by FloatingPlayerService while its overlay window is showing, so MainActivity's
+ * onStop() knows not to pause local playback just because the app was sent to the
+ * background — that's the whole point of the pop-up: video keeps playing while another
+ * app is in front.
+ */
+object FloatingPlayerState {
+    var isActive: Boolean = false
+}
+
 class MainActivity : ComponentActivity() {
 
     private val permissionLauncher = registerForActivityResult(
@@ -66,7 +76,8 @@ class MainActivity : ComponentActivity() {
                     playlistDao = db.playlistDao(),
                     videoScanner = videoScanner,
                     audioScanner = audioScanner,
-                    videoGroupDao = db.videoGroupDao()
+                    videoGroupDao = db.videoGroupDao(),
+                    bookmarkDao = db.bookmarkDao()
                 )
                 // The player itself now lives on DkPlayerApplication (not created here) so
                 // that PlaybackService can share the exact same instance for background
@@ -169,7 +180,7 @@ class MainActivity : ComponentActivity() {
         super.onStop()
         // Leave local playback running when in PiP, when casting (irrelevant to this
         // device's screen), or when the user opted in to background audio playback.
-        if (!isInPictureInPictureMode) {
+        if (!isInPictureInPictureMode && !FloatingPlayerState.isActive) {
             val backgroundAudioEnabled = runBlocking { app.settingsDataStore.settingsFlow.first().backgroundAudioPlayback }
             val isCasting = viewModel.playerManager.isCastingFlow.value
             if (!backgroundAudioEnabled && !isCasting && viewModel.playerManager.exoPlayer.isPlaying) {
