@@ -9,6 +9,7 @@ import android.os.Bundle
 import androidx.media3.cast.CastPlayer
 import androidx.media3.cast.SessionAvailabilityListener
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
@@ -59,6 +60,36 @@ data class AudioTrackInfo(
     val trackIndex: Int,
     val label: String,
     val isSelected: Boolean
+)
+
+/**
+ * Loop points for the "A-B repeat" menu action, in player position ms. Once both are
+ * set, the progress tracker (see TvExoPlayerManager.startProgressTracker) seeks back
+ * to [pointAMs] whenever playback reaches [pointBMs].
+ */
+data class AbRepeatState(
+    val pointAMs: Long? = null,
+    val pointBMs: Long? = null
+)
+
+data class EqualizerBandInfo(
+    val index: Int,
+    val centerFreqHz: Int,
+    val minLevelMillibel: Int,
+    val maxLevelMillibel: Int,
+    val currentLevelMillibel: Int
+)
+
+data class EqualizerState(
+    // False until a real audio session id exists to attach to (i.e. before playback
+    // has actually started) — the Equalizer dialog uses this to show "not available
+    // yet" instead of an empty band list.
+    val available: Boolean = false,
+    val enabled: Boolean = false,
+    val bands: List<EqualizerBandInfo> = emptyList(),
+    val presets: List<String> = emptyList(),
+    // Index into `presets`, or -1 once a band's been hand-tuned away from any preset.
+    val currentPreset: Int = -1
 )
 
 /**
@@ -167,6 +198,19 @@ class TvExoPlayerManager(
     // MainActivity to optionally match the display's refresh rate to it.
     private val _videoFrameRateFlow = MutableStateFlow<Float?>(null)
     val videoFrameRateFlow: StateFlow<Float?> = _videoFrameRateFlow.asStateFlow()
+
+    private val _repeatMode = MutableStateFlow(Player.REPEAT_MODE_OFF)
+    val repeatModeFlow: StateFlow<Int> = _repeatMode.asStateFlow()
+
+    private val _abRepeatState = MutableStateFlow(AbRepeatState())
+    val abRepeatStateFlow: StateFlow<AbRepeatState> = _abRepeatState.asStateFlow()
+
+    private val _audioOnlyModeEnabled = MutableStateFlow(false)
+    val audioOnlyModeEnabledFlow: StateFlow<Boolean> = _audioOnlyModeEnabled.asStateFlow()
+
+    private var equalizer: android.media.audiofx.Equalizer? = null
+    private val _equalizerState = MutableStateFlow(EqualizerState())
+    val equalizerStateFlow: StateFlow<EqualizerState> = _equalizerState.asStateFlow()
 
     private var lastPlayedUrl: String? = null
     private var lastPlayedTitle: String? = null
@@ -396,6 +440,10 @@ class TvExoPlayerManager(
         referrer: String? = null,
         subtitle: String? = null
     ) {
+        // A-B loop points are positions within one specific item — a different item
+        // would seek to meaningless spots. Same-URL replays (error retries, cast
+        // handoff) keep the loop.
+        if (url != lastPlayedUrl) _abRepeatState.value = AbRepeatState()
         lastPlayedUrl = url
         lastPlayedTitle = title ?: lastPlayedTitle
         lastPlayedSubtitle = subtitle
@@ -489,6 +537,129 @@ class TvExoPlayerManager(
             .build()
     }
 
+    // ---- Repeat mode ----
+
+    fun cycleRepeatMode() {
+        val next = when (_repeatMode.value) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
+            Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
+            else -> Player.REPEAT_MODE_OFF
+        }
+        _repeatMode.value = next
+        localPlayer.repeatMode = next
+        castPlayer?.repeatMode = next
+    }
+
+    // ---- A-B repeat ----
+
+    /** First tap of the "A-B repeat" menu item: marks the loop's start. Clears any
+     *  previous B point, since a fresh A point means a fresh loop. */
+    fun setAbRepeatPointA() {
+        _abRepeatState.value = AbRepeatState(pointAMs = _activePlayer.value.currentPosition, pointBMs = null)
+    }
+
+    /** Second tap: marks the loop's end and starts enforcing it. Ignored if it's not
+     *  actually after point A, since that's not a valid loop. */
+    fun setAbRepeatPointB() {
+        val a = _abRepeatState.value.pointAMs ?: return
+        val position = _activePlayer.value.currentPosition
+        if (position > a) {
+            _abRepeatState.value = _abRepeatState.value.copy(pointBMs = position)
+        }
+    }
+
+    fun clearAbRepeat() {
+        _abRepeatState.value = AbRepeatState()
+    }
+
+    // ---- Play as audio ----
+
+    /** Disables the video track selection so only audio decodes/renders — same
+     *  practical effect as YouTube's "audio mode": less battery/CPU, and the phone
+     *  screen can turn off without stopping playback (subject to backgroundPlaybackEnabled). */
+    fun setAudioOnlyModeEnabled(enabled: Boolean) {
+        _audioOnlyModeEnabled.value = enabled
+        trackSelector.parameters = trackSelector.parameters.buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, enabled)
+            .build()
+    }
+
+    // ---- Video information ----
+
+    /** Snapshot of the format the video/audio renderers are currently consuming —
+     *  codec, resolution, bitrate, sample rate, etc. — for the "Video information" dialog. */
+    fun currentVideoFormat(): Format? = localPlayer.videoFormat
+    fun currentAudioFormat(): Format? = localPlayer.audioFormat
+
+    // ---- Equalizer ----
+
+    /** Attaches (or reuses) an Equalizer effect on the local player's current audio
+     *  session. Returns null before playback has produced a real session id yet, or if
+     *  the device genuinely has no equalizer effect available — both are normal and
+     *  the dialog should just show "not available" rather than treating it as an error. */
+    private fun ensureEqualizer(): android.media.audiofx.Equalizer? {
+        val sessionId = localPlayer.audioSessionId
+        if (sessionId == 0) return null
+        equalizer?.let { return it }
+        return try {
+            android.media.audiofx.Equalizer(0, sessionId).also { equalizer = it }
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    fun refreshEqualizerState() {
+        val eq = ensureEqualizer()
+        if (eq == null) {
+            _equalizerState.value = EqualizerState()
+            return
+        }
+        val range = eq.bandLevelRange
+        val numberOfBands = eq.numberOfBands.toInt()
+        val bands = (0 until numberOfBands).map { i ->
+            val band = i.toShort()
+            EqualizerBandInfo(
+                index = i,
+                centerFreqHz = eq.getCenterFreq(band) / 1000,
+                minLevelMillibel = range[0].toInt(),
+                maxLevelMillibel = range[1].toInt(),
+                currentLevelMillibel = eq.getBandLevel(band).toInt()
+            )
+        }
+        val numberOfPresets = eq.numberOfPresets.toInt()
+        val presets = (0 until numberOfPresets).map { eq.getPresetName(it.toShort()) }
+        _equalizerState.value = EqualizerState(
+            available = true,
+            enabled = eq.enabled,
+            bands = bands,
+            presets = presets,
+            currentPreset = runCatching { eq.currentPreset.toInt() }.getOrDefault(-1)
+        )
+    }
+
+    fun setEqualizerEnabled(enabled: Boolean) {
+        val eq = ensureEqualizer() ?: return
+        // AudioEffect.setEnabled() returns a status code rather than Unit, so it's
+        // called explicitly here rather than via Kotlin's `eq.enabled = enabled`
+        // synthetic-property syntax.
+        eq.setEnabled(enabled)
+        refreshEqualizerState()
+    }
+
+    fun setEqualizerBandLevel(bandIndex: Int, levelMillibel: Int) {
+        val eq = ensureEqualizer() ?: return
+        eq.setEnabled(true)
+        eq.setBandLevel(bandIndex.toShort(), levelMillibel.toShort())
+        refreshEqualizerState()
+    }
+
+    fun setEqualizerPreset(preset: Int) {
+        val eq = ensureEqualizer() ?: return
+        eq.setEnabled(true)
+        eq.usePreset(preset.toShort())
+        refreshEqualizerState()
+    }
+
     private fun startProgressTracker() {
         stopProgressTracker()
         progressJob = scope.launch {
@@ -496,6 +667,16 @@ class TvExoPlayerManager(
                 val player = _activePlayer.value
                 _currentPositionFlow.value = player.currentPosition
                 _durationFlow.value = player.duration.coerceAtLeast(0L)
+
+                // A-B repeat enforcement: this 500ms poll interval means the loop can
+                // overshoot point B by up to that much before snapping back — fine for
+                // the "replay this line/verse" use case this feature targets.
+                val ab = _abRepeatState.value
+                val pointB = ab.pointBMs
+                if (ab.pointAMs != null && pointB != null && player.currentPosition >= pointB) {
+                    player.seekTo(ab.pointAMs)
+                }
+
                 delay(500)
             }
         }
@@ -794,6 +975,7 @@ class TvExoPlayerManager(
             cast.setMediaItem(mediaItem, position)
             cast.prepare()
             cast.playWhenReady = true
+            cast.repeatMode = _repeatMode.value
         }
         _activePlayer.value = cast
         _isCasting.value = true
@@ -981,6 +1163,7 @@ class TvExoPlayerManager(
         mediaSession.release()
         castPlayer?.setSessionAvailabilityListener(null)
         castPlayer?.release()
+        equalizer?.release()
         localPlayer.release()
     }
 }

@@ -77,9 +77,14 @@ class PlaybackService : MediaSessionService() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         // If the user swipes the app away from Recents while nothing is actually
         // playing, there's no reason to keep the foreground service (and its
-        // notification) alive.
-        val player = (application as DkPlayerApplication).playerManager.exoPlayer
-        if (!player.isPlaying) {
+        // notification) alive. But while casting, the LOCAL exoPlayer is deliberately
+        // paused (see TvExoPlayerManager.switchToCast) — the Chromecast is what's
+        // actually playing — so checking exoPlayer.isPlaying alone would stop this
+        // service (and its notification/controls) out from under an active cast
+        // session the moment the app is swiped away. Casting keeps the service alive
+        // too, whether or not the local player itself is running.
+        val manager = (application as DkPlayerApplication).playerManager
+        if (!manager.exoPlayer.isPlaying && !manager.isCastingFlow.value) {
             stopSelf()
         }
         super.onTaskRemoved(rootIntent)
