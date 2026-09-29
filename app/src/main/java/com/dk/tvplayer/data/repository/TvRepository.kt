@@ -1,5 +1,7 @@
 package com.dk.tvplayer.data.repository
 
+import com.dk.tvplayer.data.local.BookmarkDao
+import com.dk.tvplayer.data.local.BookmarkEntity
 import com.dk.tvplayer.data.local.HistoryDao
 import com.dk.tvplayer.data.local.HistoryEntity
 import com.dk.tvplayer.data.local.LocalAudioItem
@@ -33,7 +35,8 @@ class TvRepository(
     private val playlistDao: PlaylistDao,
     private val videoScanner: LocalVideoScanner,
     private val audioScanner: LocalAudioScanner,
-    private val videoGroupDao: VideoGroupDao
+    private val videoGroupDao: VideoGroupDao,
+    private val bookmarkDao: BookmarkDao
 ) {
     fun getAllChannels(): Flow<List<TvChannelEntity>> = channelDao.getAllChannels()
     fun getAllGroups(): Flow<List<String>> = channelDao.getAllGroups()
@@ -180,6 +183,22 @@ class TvRepository(
                 )
             )
         }
+
+    // ---- Bookmarks ----
+
+    fun getBookmarksForMedia(mediaUrl: String): Flow<List<BookmarkEntity>> =
+        bookmarkDao.getBookmarksForMedia(mediaUrl)
+
+    suspend fun addBookmark(mediaUrl: String, mediaTitle: String, positionMs: Long, label: String) =
+        withContext(Dispatchers.IO) {
+            bookmarkDao.insertBookmark(
+                BookmarkEntity(mediaUrl = mediaUrl, mediaTitle = mediaTitle, positionMs = positionMs, label = label)
+            )
+        }
+
+    suspend fun deleteBookmark(bookmark: BookmarkEntity) = withContext(Dispatchers.IO) {
+        bookmarkDao.deleteBookmark(bookmark)
+    }
 
     /** Persists a channel's favorite flag directly (source of truth for Home's Favorite
      *  Channels row and the IPTV Channels tab's favorite filter — see
