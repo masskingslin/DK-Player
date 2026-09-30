@@ -86,6 +86,14 @@ class TvRepository(
 
     // ---- Local video groups & per-file metadata (played state, group membership) ----
 
+    suspend fun clearPlaybackHistory() = withContext(Dispatchers.IO) { historyDao.deleteAll() }
+
+    /** Forgets played flags and all user-made video groups (the files themselves are untouched). */
+    suspend fun clearLocalVideoData() = withContext(Dispatchers.IO) {
+        videoGroupDao.deleteAllMeta()
+        videoGroupDao.deleteAllGroups()
+    }
+
     fun getVideoGroups(): Flow<List<VideoGroupEntity>> = videoGroupDao.getAllGroups()
     fun getLocalVideoMeta(): Flow<List<LocalVideoMetaEntity>> = videoGroupDao.getAllMeta()
 
