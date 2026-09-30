@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DK Player · Remote access</title>
+<style>
+  :root { --bg:#10131a; --card:#1a1f2b; --line:#2a3142; --fg:#e8ebf2; --dim:#8b93a7; --accent:#7c9cff; --bad:#ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+  header { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:2; }
+  header h1 { font-size:18px; margin:0; flex:1; }
+  button { background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:8px 14px; font-size:14px; cursor:pointer; }
+  button.primary { background:var(--accent); color:#0b1020; border-color:var(--accent); font-weight:600; }
+  input[type=text], input[type=search] { background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-size:16px; }
+  main { max-width:900px; margin:0 auto; padding:16px; }
+  nav { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px; }
+  nav button.active { background:var(--accent); color:#0b1020; border-color:var(--accent); }
+  .row { display:flex; align-items:center; gap:10px; padding:10px 12px; border-bottom:1px solid var(--line); }
+  .row .name { flex:1; overflow-wrap:anywhere; }
+  .row .meta { color:var(--dim); font-size:13px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+  .center { text-align:center; }
+  #login { max-width:360px; margin:15vh auto 0; }
+  #code { font-size:32px; letter-spacing:8px; text-align:center; width:100%; }
+  .err { color:var(--bad); min-height:1.4em; margin-top:8px; }
+  input[type=range] { width:100%; }
+  .controls { display:flex; gap:10px; justify-content:center; margin:12px 0; flex-wrap:wrap; }
+  pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+<div id="login" class="card center hidden">
+  <h1>DK Player</h1>
+  <p class="meta">Enter the one-time code shown in the app's Remote access screen.</p>
+  <input id="code" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" autofocus>
+  <div class="err" id="loginErr"></div>
+  <button class="primary" id="loginBtn" style="width:100%;margin-top:8px">Sign in</button>
+</div>
+
+<div id="app" class="hidden">
+  <header><h1>DK Player · Remote</h1><button id="logout">Sign out</button></header>
+  <main>
+    <nav id="tabs"></nav>
+    <div id="view"></div>
+  </main>
+</div>
+
+<script>
+var cfg = {}, tab = 'now', statusTimer = null, filePath = '';
+function $(id) { return document.getElementById(id); }
+function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+function fmtTime(ms) { ms = Math.max(0, ms | 0); var s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); s = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0'); }
+function fmtSize(b) { if (b < 1024) return b + ' B'; var u = ['KB', 'MB', 'GB', 'TB'], i = -1; do { b /= 1024; i++; } while (b >= 1024 && i < 3); return b.toFixed(1) + ' ' + u[i]; }
+
+function api(path, body) {
+  var opt = { credentials: 'same-origin' };
+  if (body !== undefined) { opt.method = 'POST'; opt.headers = { 'Content-Type': 'application/json' }; opt.body = JSON.stringify(body); }
+  return fetch(path, opt).then(function (r) {
+    if (r.status === 401 && path !== '/api/login') { showLogin(); throw new Error('signed out'); }
+    return r.text().then(function (t) {
+      var j = null; try { j = JSON.parse(t); } catch (e) {}
+      if (!r.ok) throw new Error((j && j.error) || ('Error ' + r.status));
+      return j !== null ? j : t;
+    });
+  });
+}
+
+function showLogin() { clearInterval(statusTimer); $('app').classList.add('hidden'); $('login').classList.remove('hidden'); $('code').value = ''; $('code').focus(); }
+
+function doLogin() {
+  $('loginErr').textContent = '';
+  api('/api/login', { code: $('code').value.trim() }).then(start).catch(function (e) { $('loginErr').textContent = e.message; });
+}
+$('loginBtn').onclick = doLogin;
+$('code').onkeydown = function (e) { if (e.key === 'Enter') doLogin(); };
+$('logout').onclick = function () { api('/api/logout', {}).finally(showLogin); };
+
+function start() {
+  api('/api/config').then(function (c) {
+    cfg = c;
+    $('login').classList.add('hidden'); $('app').classList.remove('hidden');
+    var tabs = [['now', 'Now playing', true], ['video', 'Videos', c.video], ['audio', 'Audio', c.audio], ['playlists', 'Playlists', c.playlists],
+      ['files', 'Files', c.files], ['history', 'History', c.history], ['search', 'Search', c.search], ['logs', 'Logs', c.logs]];
+    var nav = $('tabs'); nav.textContent = '';
+    tabs.forEach(function (t) {
+      if (!t[2]) return;
+      var b = el('button', t[0] === tab ? 'active' : '', t[1]);
+      b.onclick = function () { tab = t[0]; start(); };
+      nav.appendChild(b);
+    });
+    render();
+  }).catch(function () {});
+}
+
+function render() {
+  clearInterval(statusTimer);
+  var v = $('view'); v.textContent = '';
+  ({ now: renderNow, video: renderVideos, audio: renderAudio, playlists: renderPlaylists, files: renderFiles, history: renderHistory, search: renderSearch, logs: renderLogs })[tab](v);
+}
+
+function playButton(path, title) {
+  var b = el('button', 'primary', 'Play');
+  b.onclick = function () { api('/api/control', { action: 'playMedia', path: path, title: title }).then(function () { b.textContent = 'Playing…'; setTimeout(function () { b.textContent = 'Play'; }, 1500); }).catch(function (e) { alert(e.message); }); };
+  return b;
+}
+function mediaRow(item, sub) {
+  var r = el('div', 'row');
+  var n = el('div', 'name', item.name); if (sub) n.appendChild(el('div', 'meta', sub));
+  r.appendChild(n);
+  if (cfg.control) r.appendChild(playButton(item.path, item.name));
+  if (cfg.files) { var a = el('a'); a.href = '/api/file?path=' + encodeURIComponent(item.path); a.appendChild(el('button', '', 'Download')); r.appendChild(a); }
+  return r;
+}
+
+function renderNow(v) {
+  var c = el('div', 'card center');
+  var title = el('h2', '', '—'), pos = el('div', 'meta'), seek = el('input'), controls = el('div', 'controls');
+  seek.type = 'range'; seek.min = 0; seek.max = 1000; seek.value = 0;
+  var dragging = false, dur = 0;
+  seek.onmousedown = seek.ontouchstart = function () { dragging = true; };
+  seek.onchange = function () { dragging = false; if (cfg.control && dur) api('/api/control', { action: 'seek', positionMs: Math.round(seek.value / 1000 * dur) }); };
+  function ctl(label, body) { var b = el('button', '', label); b.onclick = function () { api('/api/control', body).catch(function (e) { alert(e.message); }); }; return b; }
+  var toggle = ctl('Play / Pause', { action: 'toggle' }); toggle.className = 'primary';
+  controls.appendChild(ctl('−10s', { action: 'seekBy', deltaMs: -10000 })); controls.appendChild(toggle); controls.appendChild(ctl('+10s', { action: 'seekBy', deltaMs: 10000 }));
+  c.appendChild(title); c.appendChild(seek); c.appendChild(pos);
+  if (cfg.control) {
+    c.appendChild(controls);
+    var vol = el('input'); vol.type = 'range'; vol.min = 0; vol.max = 100;
+    vol.onchange = function () { api('/api/control', { action: 'volume', percent: +vol.value }); };
+    var sp = el('select'); [0.5, 0.75, 1, 1.25, 1.5, 2].forEach(function (s) { var o = el('option', '', s + '×'); o.value = s; if (s === 1) o.selected = true; sp.appendChild(o); });
+    sp.onchange = function () { api('/api/control', { action: 'speed', value: +sp.value }); };
+    c.appendChild(el('div', 'meta', 'Volume')); c.appendChild(vol);
+    var spRow = el('div', 'controls'); spRow.appendChild(el('span', 'meta', 'Speed')); spRow.appendChild(sp); c.appendChild(spRow);
+    c._vol = vol;
+  } else { c.appendChild(el('p', 'meta', 'Playback control is turned off on the device.')); }
+  v.appendChild(c);
+  function poll() {
+    api('/api/status').then(function (s) {
+      title.textContent = s.title || 'Nothing playing'; dur = s.durationMs;
+      pos.textContent = fmtTime(s.positionMs) + ' / ' + fmtTime(s.durationMs) + (s.playing ? '  ▶' : '  ❚❚');
+      if (!dragging && dur) seek.value = Math.round(s.positionMs / dur * 1000);
+      if (c._vol && document.activeElement !== c._vol) c._vol.value = s.volume;
+    }).catch(function () {});
+  }
+  poll(); statusTimer = setInterval(poll, 1500);
+}
+
+function listView(v, path, build) {
+  v.appendChild(el('p', 'meta', 'Loading…'));
+  api(path).then(function (data) { v.textContent = ''; build(data); }).catch(function (e) { v.textContent = ''; v.appendChild(el('p', 'err', e.message)); });
+}
+function renderVideos(v) { listView(v, '/api/library/videos', function (a) { if (!a.length) v.appendChild(el('p', 'meta', 'No videos found.')); a.forEach(function (i) { v.appendChild(mediaRow(i, fmtTime(i.durationMs) + ' · ' + fmtSize(i.size))); }); }); }
+function renderAudio(v) { listView(v, '/api/library/audio', function (a) { if (!a.length) v.appendChild(el('p', 'meta', 'No audio found.')); a.forEach(function (i) { v.appendChild(mediaRow(i, (i.artist || '') + ' · ' + fmtTime(i.durationMs))); }); }); }
+function renderPlaylists(v) {
+  listView(v, '/api/library/playlists', function (a) {
+    if (!a.length) v.appendChild(el('p', 'meta', 'No playlists.'));
+    a.forEach(function (p) {
+      var c = el('div', 'card'); c.appendChild(el('h3', '', p.name + ' (' + p.items.length + ')'));
+      p.items.slice(0, 200).forEach(function (it) {
+        var r = el('div', 'row'); r.appendChild(el('div', 'name', it.title));
+        if (cfg.control) r.appendChild(playButton(it.url, it.title));
+        c.appendChild(r);
+      });
+      v.appendChild(c);
+    });
+  });
+}
+function renderHistory(v) {
+  listView(v, '/api/history', function (a) {
+    if (!a.length) v.appendChild(el('p', 'meta', 'Nothing in history.'));
+    a.forEach(function (h) {
+      var r = el('div', 'row'); var n = el('div', 'name', h.title); n.appendChild(el('div', 'meta', fmtTime(h.positionMs) + ' / ' + fmtTime(h.durationMs) + ' · ' + new Date(h.watchedAt).toLocaleString()));
+      r.appendChild(n); if (cfg.control) r.appendChild(playButton(h.url, h.title)); v.appendChild(r);
+    });
+  });
+}
+function renderFiles(v) {
+  listView(v, '/api/files' + (filePath ? '?path=' + encodeURIComponent(filePath) : ''), function (d) {
+    filePath = d.path;
+    v.appendChild(el('p', 'meta', d.path));
+    if (d.parent) { var up = el('div', 'row'); up.appendChild(el('div', 'name', '↑ ..')); up.style.cursor = 'pointer'; up.onclick = function () { filePath = d.parent; render(); }; v.appendChild(up); }
+    d.entries.forEach(function (e) {
+      var r = el('div', 'row');
+      var n = el('div', 'name', (e.isDir ? '📁 ' : '') + e.name); if (!e.isDir) n.appendChild(el('div', 'meta', fmtSize(e.size)));
+      r.appendChild(n);
+      if (e.isDir) { r.style.cursor = 'pointer'; r.onclick = function () { filePath = e.path; render(); }; }
+      else {
+        if (cfg.control) r.appendChild(playButton(e.path, e.name));
+        var a = el('a'); a.href = '/api/file?path=' + encodeURIComponent(e.path); a.appendChild(el('button', '', 'Download')); r.appendChild(a);
+      }
+      v.appendChild(r);
+    });
+  });
+}
+function renderSearch(v) {
+  var box = el('input'); box.type = 'search'; box.placeholder = 'Search videos and audio'; box.style.width = '100%';
+  var out = el('div'); v.appendChild(box); v.appendChild(out);
+  var t; box.oninput = function () { clearTimeout(t); t = setTimeout(function () {
+    if (box.value.trim().length < 2) { out.textContent = ''; return; }
+    api('/api/search?q=' + encodeURIComponent(box.value)).then(function (r) {
+      out.textContent = '';
+      r.videos.forEach(function (i) { out.appendChild(mediaRow(i, 'Video')); });
+      r.audio.forEach(function (i) { out.appendChild(mediaRow(i, 'Audio · ' + (i.artist || ''))); });
+      if (!r.videos.length && !r.audio.length) out.appendChild(el('p', 'meta', 'No matches.'));
+    }).catch(function (e) { out.textContent = e.message; });
+  }, 300); };
+}
+function renderLogs(v) { listView(v, '/api/logs', function (t) { var p = el('pre'); p.textContent = typeof t === 'string' ? t : JSON.stringify(t); v.appendChild(p); }); }
+
+api('/api/config').then(start).catch(showLogin);
+</script>
+</body>
+</html>
