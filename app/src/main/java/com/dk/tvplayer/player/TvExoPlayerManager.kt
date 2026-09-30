@@ -107,7 +107,8 @@ data class EqualizerState(
 class TvExoPlayerManager(
     private val context: Context,
     hwAccelerationEnabled: Boolean = true,
-    cacheDataSourceFactory: CacheDataSource.Factory? = null
+    cacheDataSourceFactory: CacheDataSource.Factory? = null,
+    networkCachingMs: Int = 0
 ) {
     companion object {
         private const val MAX_RETRY_ATTEMPTS = 3
@@ -148,6 +149,18 @@ class TvExoPlayerManager(
     val localPlayer: ExoPlayer = ExoPlayer.Builder(context, renderersFactory)
         .setTrackSelector(trackSelector)
         .apply {
+            // "Network caching value" (Advanced settings): how much media to buffer before
+            // starting / resuming after a stall. Applied at player-creation time, so a change
+            // takes effect on the next app start.
+            if (networkCachingMs > 0) {
+                val playbackBuffer = networkCachingMs.coerceIn(250, 60_000)
+                val window = maxOf(50_000, playbackBuffer)
+                setLoadControl(
+                    androidx.media3.exoplayer.DefaultLoadControl.Builder()
+                        .setBufferDurationsMs(window, window, playbackBuffer, playbackBuffer)
+                        .build()
+                )
+            }
             // When a download cache is supplied, playback transparently reads from it for
             // anything that's been downloaded (see DownloadManagerHolder) and falls back
             // to the network for everything else — no special-casing needed at the call
@@ -370,6 +383,10 @@ class TvExoPlayerManager(
         attachListener(localPlayer)
     }
 
+    /** Invoked when the active item plays to its end — the ViewModel uses it to advance
+     *  the local-video play queue. */
+    var onPlaybackEnded: (() -> Unit)? = null
+
     private fun attachListener(player: Player) {
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -389,6 +406,7 @@ class TvExoPlayerManager(
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (_activePlayer.value === player) {
                     _isBufferingFlow.value = playbackState == Player.STATE_BUFFERING
+                    if (playbackState == Player.STATE_ENDED) onPlaybackEnded?.invoke()
                     if (playbackState == Player.STATE_READY) {
                         _durationFlow.value = player.duration.coerceAtLeast(0L)
                         retryAttempt = 0
@@ -483,7 +501,11 @@ class TvExoPlayerManager(
             val requestHeaders = mutableMapOf<String, String>()
             if (!referrer.isNullOrBlank()) requestHeaders["Referer"] = referrer
             val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-                .setUserAgent(userAgent?.takeIf { it.isNotBlank() } ?: M3uParser.DEFAULT_USER_AGENT)
+                .setUserAgent(
+                    userAgent?.takeIf { it.isNotBlank() }
+                        ?: com.dk.tvplayer.util.AdvancedPrefs.httpUserAgent.value.takeIf { it.isNotBlank() }
+                        ?: M3uParser.DEFAULT_USER_AGENT
+                )
                 .setDefaultRequestProperties(requestHeaders)
                 .setAllowCrossProtocolRedirects(true)
                 .setConnectTimeoutMs(15_000)
@@ -509,6 +531,10 @@ class TvExoPlayerManager(
         refreshSessionMetadataForCar()
     }
 
+    /** Title/URL of whatever was last started via [play] — used by remote access. */
+    val currentMediaTitle: String? get() = lastPlayedTitle
+    val currentMediaUrl: String? get() = lastPlayedUrl
+
     fun togglePlayPause() {
         val player = _activePlayer.value
         if (player.isPlaying) player.pause() else player.play()
@@ -522,7 +548,14 @@ class TvExoPlayerManager(
 
     fun setPlaybackSpeed(speed: Float) {
         _playbackSpeed.value = speed
-        _activePlayer.value.setPlaybackSpeed(speed)
+        val player = _activePlayer.value
+        if (com.dk.tvplayer.util.AdvancedPrefs.timeStretchAudio.value) {
+            // Time-stretching: speed changes, pitch stays put.
+            player.setPlaybackSpeed(speed)
+        } else {
+            // Pitch follows speed, like a tape running fast or slow.
+            player.playbackParameters = androidx.media3.common.PlaybackParameters(speed, speed)
+        }
     }
 
     /** Fast seek trades exact-frame accuracy for speed by snapping to the nearest keyframe. */
@@ -597,15 +630,48 @@ class TvExoPlayerManager(
      *  session. Returns null before playback has produced a real session id yet, or if
      *  the device genuinely has no equalizer effect available — both are normal and
      *  the dialog should just show "not available" rather than treating it as an error. */
+    private var equalizerSessionId = 0
+
     private fun ensureEqualizer(): android.media.audiofx.Equalizer? {
         val sessionId = localPlayer.audioSessionId
         if (sessionId == 0) return null
+        // A new track can come with a new audio session — the effect is bound to one
+        // session, so it has to be rebuilt (and the saved curve re-applied) when it changes.
+        if (equalizer != null && equalizerSessionId != sessionId) {
+            runCatching { equalizer?.release() }
+            equalizer = null
+        }
         equalizer?.let { return it }
         return try {
-            android.media.audiofx.Equalizer(0, sessionId).also { equalizer = it }
+            android.media.audiofx.Equalizer(0, sessionId).also {
+                equalizer = it
+                equalizerSessionId = sessionId
+                applyCurveTo(it, EqualizerStore.state.value)
+            }
         } catch (t: Throwable) {
             null
         }
+    }
+
+    /** Maps the 10-band curve + preamp onto whatever bands this device's equalizer has. */
+    private fun applyCurveTo(eq: android.media.audiofx.Equalizer, settings: EqualizerSettings) {
+        runCatching {
+            val range = eq.bandLevelRange
+            for (i in 0 until eq.numberOfBands.toInt()) {
+                val centerHz = eq.getCenterFreq(i.toShort()) / 1000f
+                val db = EqPresets.levelAt(settings.bandsDb, centerHz) + settings.preampDb
+                val mb = (db * 100f).toInt().coerceIn(range[0].toInt(), range[1].toInt())
+                eq.setBandLevel(i.toShort(), mb.toShort())
+            }
+            eq.setEnabled(settings.enabled)
+        }
+    }
+
+    /** Pushes [EqualizerStore]'s current settings to the audio effect. */
+    fun applyEqualizerSettings() {
+        val eq = ensureEqualizer() ?: return
+        applyCurveTo(eq, EqualizerStore.state.value)
+        refreshEqualizerState()
     }
 
     fun refreshEqualizerState() {
