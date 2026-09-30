@@ -35,6 +35,8 @@ import com.dk.tvplayer.ui.screens.TvMainScreen
 import com.dk.tvplayer.ui.theme.dkColorScheme
 import com.dk.tvplayer.ui.theme.dkShapes
 import com.dk.tvplayer.ui.theme.dkTypography
+import com.dk.tvplayer.util.EXTRA_PLAY_PATH
+import com.dk.tvplayer.util.EXTRA_PLAY_TITLE
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
@@ -90,6 +92,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestRequiredPermissions()
+        handleLaunchIntent(intent)
+        // Remote access was left on: bring the server back up with the app.
+        if (com.dk.tvplayer.remote.RemoteAccessConfig.enabled.value) {
+            runCatching { com.dk.tvplayer.remote.RemoteAccessService.start(this) }
+        }
 
         setContent {
             val state by viewModel.uiState.collectAsState()
@@ -114,6 +121,20 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleLaunchIntent(intent)
+    }
+
+    /** A pinned launcher shortcut carries the video path/title; hand it to the UI to play. */
+    private fun handleLaunchIntent(intent: Intent?) {
+        val path = intent?.getStringExtra(EXTRA_PLAY_PATH) ?: return
+        val title = intent.getStringExtra(EXTRA_PLAY_TITLE) ?: path.substringAfterLast('/')
+        viewModel.externalPlayRequest.value = path to title
+        intent.removeExtra(EXTRA_PLAY_PATH)
     }
 
     /**

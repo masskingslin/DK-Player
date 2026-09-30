@@ -37,6 +37,11 @@ class DkPlayerApplication : Application() {
         // being visible to whoever happens to have a debugger attached.
         CrashLogger.install(this)
         settingsDataStore = SettingsDataStore(this)
+        com.dk.tvplayer.player.EqualizerStore.init(this)
+        com.dk.tvplayer.util.DebugLogger.init(this)
+        com.dk.tvplayer.util.AdvancedPrefs.init(this)
+        com.dk.tvplayer.util.ParentalControl.init(this)
+        com.dk.tvplayer.remote.RemoteAccessConfig.init(this)
         // Hardware acceleration is baked into the player at construction time (see
         // TvExoPlayerManager's doc comment), so this one settings read has to happen
         // synchronously before the player is built. It normally resolves instantly
@@ -47,11 +52,15 @@ class DkPlayerApplication : Application() {
         val hwAccel = runCatching {
             runBlocking { settingsDataStore.settingsFlow.first().hwAcceleration }
         }.getOrDefault(true)
-        downloadManagerHolder = DownloadManagerHolder(this)
+        downloadManagerHolder = DownloadManagerHolder(
+            this,
+            userAgent = com.dk.tvplayer.util.AdvancedPrefs.httpUserAgent.value
+        )
         playerManager = TvExoPlayerManager(
             this,
             hwAccelerationEnabled = hwAccel,
-            cacheDataSourceFactory = downloadManagerHolder.cacheDataSourceFactory
+            cacheDataSourceFactory = downloadManagerHolder.cacheDataSourceFactory,
+            networkCachingMs = com.dk.tvplayer.util.AdvancedPrefs.networkCachingMs.value
         )
         playerManager.initCast()
     }
