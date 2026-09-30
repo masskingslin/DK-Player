@@ -122,7 +122,7 @@ import com.dk.tvplayer.ui.components.PlaybackSpeedMenu
 import com.dk.tvplayer.ui.components.SavePlaylistDialog
 import com.dk.tvplayer.ui.components.SleepTimerDialog
 import com.dk.tvplayer.ui.components.SubtitleTrackDialog
-import com.dk.tvplayer.ui.components.VideoFitMenu
+import com.dk.tvplayer.ui.components.VideoFitOptions
 import com.dk.tvplayer.ui.components.VideoInfoDialog
 import com.dk.tvplayer.ui.components.VideoPlayerTipsDialog
 import com.google.android.gms.cast.framework.CastButtonFactory
@@ -170,7 +170,9 @@ fun PhonePlayerScreen(
     var showSpeedMenu by remember { mutableStateOf(false) }
     var showSubtitleDialog by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
-    var showFitMenu by remember { mutableStateOf(false) }
+    // Tapping the fit button cycles modes directly; this holds the last label toast so rapid
+    // taps replace it instead of queueing up.
+    var fitToast by remember { mutableStateOf<Toast?>(null) }
     var showAudioTrackDialog by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
     var showJumpToTimeDialog by remember { mutableStateOf(false) }
@@ -762,7 +764,13 @@ fun PhonePlayerScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = { showFitMenu = !showFitMenu }) {
+                        IconButton(onClick = {
+                            val idx = VideoFitOptions.indexOfFirst { it.resizeMode == resizeMode }
+                            val next = VideoFitOptions[(idx + 1).mod(VideoFitOptions.size)]
+                            resizeMode = next.resizeMode
+                            fitToast?.cancel()
+                            fitToast = Toast.makeText(context, next.label, Toast.LENGTH_SHORT).also { it.show() }
+                        }) {
                             Icon(Icons.Default.AspectRatio, contentDescription = "Video fit", tint = Color.White)
                         }
 
@@ -968,23 +976,8 @@ fun PhonePlayerScreen(
                     }
                 }
 
-                // Fit / speed popups float just above the bottom bar they're triggered
+                // The speed popup floats just above the bottom bar it's triggered
                 // from, rather than pushing the bar's own layout around.
-                AnimatedVisibility(
-                    visible = showFitMenu,
-                    enter = fadeIn(),
-                    exit = fadeOut(),
-                    modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 110.dp, start = 16.dp)
-                ) {
-                    VideoFitMenu(
-                        currentResizeMode = resizeMode,
-                        onModeSelected = { mode ->
-                            resizeMode = mode
-                            showFitMenu = false
-                        }
-                    )
-                }
-
                 AnimatedVisibility(
                     visible = showSpeedMenu,
                     enter = fadeIn(),
@@ -1064,11 +1057,9 @@ fun PhonePlayerScreen(
         // (re)read its state every time the dialog opens rather than once at startup.
         LaunchedEffect(Unit) { viewModel.playerManager.refreshEqualizerState() }
         EqualizerDialog(
-            state = equalizerState,
+            available = equalizerState.available,
             onDismiss = { showEqualizerDialog = false },
-            onEnabledChange = { viewModel.playerManager.setEqualizerEnabled(it) },
-            onBandLevelChange = { band, level -> viewModel.playerManager.setEqualizerBandLevel(band, level) },
-            onPresetSelected = { viewModel.playerManager.setEqualizerPreset(it) }
+            onChanged = { viewModel.playerManager.applyEqualizerSettings() }
         )
     }
 
