@@ -87,7 +87,15 @@ fun DownloadsScreen(onBack: () -> Unit) {
                 items(items, key = { it.url }) { download ->
                     DownloadRow(
                         download = download,
-                        onDelete = { downloadTracker.removeDownload(download.url) },
+                        onDelete = {
+                            val remove = { downloadTracker.removeDownload(download.url) }
+                            if (!com.dk.tvplayer.util.ParentalControl.interceptForSafeMode(
+                                    "Safe mode is on — enter your PIN to delete this download"
+                                ) { remove() }
+                            ) {
+                                remove()
+                            }
+                        },
                         onRetry = { downloadTracker.startDownload(download.url, download.title) }
                     )
                 }
