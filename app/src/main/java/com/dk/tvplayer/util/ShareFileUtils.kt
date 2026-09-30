@@ -30,4 +30,15 @@ object ShareFileUtils {
         }
         context.startActivity(Intent.createChooser(intent, chooserTitle))
     }
+
+    /** Shares an existing file that already lives under cache/exports (e.g. a database copy). */
+    fun shareFile(context: Context, file: File, mimeType: String) {
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = mimeType
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "Share ${file.name}"))
+    }
 }
