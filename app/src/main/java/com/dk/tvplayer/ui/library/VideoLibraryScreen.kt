@@ -7,6 +7,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +30,22 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import android.widget.Toast
+import com.dk.tvplayer.util.RingtoneResult
+import com.dk.tvplayer.util.LocalVideoFavorites
+import com.dk.tvplayer.util.LocalVideoActions
+import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.RemoveCircleOutline
+import androidx.compose.material.icons.filled.QueuePlayNext
+import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.AddToQueue
+import androidx.compose.material.icons.filled.AddToHomeScreen
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -35,6 +53,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
@@ -50,7 +69,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -117,6 +139,22 @@ fun VideoLibraryScreen(
     var renameGroupTarget by remember { mutableStateOf<LocalVideoDisplayItem.Group?>(null) }
     var ungroupTarget by remember { mutableStateOf<LocalVideoDisplayItem.Group?>(null) }
     var addToGroupTarget by remember { mutableStateOf<LocalVideoItem?>(null) }
+    var browseParentTarget by remember { mutableStateOf<LocalVideoItem?>(null) }
+
+    LaunchedEffect(Unit) { LocalVideoFavorites.load(context) }
+    val favoritePaths by LocalVideoFavorites.favorites.collectAsState()
+
+    // Videos in the order the library lists them (groups expanded in place) — what
+    // "Play all" queues up after the chosen video.
+    val displayOrderVideos = remember(state.localVideos, state.videoGroups, state.localVideoMeta) {
+        LocalVideoGrouping.buildDisplayItems(state.localVideos, state.videoGroups, state.localVideoMeta)
+            .flatMap { item ->
+                when (item) {
+                    is LocalVideoDisplayItem.Single -> listOf(item.video)
+                    is LocalVideoDisplayItem.Group -> item.videos
+                }
+            }
+    }
 
     // Android 10+ requires explicit user consent (via this launcher) to delete media
     // the app didn't create itself — see LocalVideoDeleter.
@@ -144,11 +182,50 @@ fun VideoLibraryScreen(
 
     if (menuVideo != null) {
         val video = menuVideo!!
-        val isPlayed = state.localVideoMeta.firstOrNull { it.filePath == video.filePath }?.isPlayed == true
-        MediaActionsMenu(
-            onDismiss = { menuVideo = null },
-            onAddToPlaylist = { addToPlaylistTarget = video.name to video.filePath; menuVideo = null },
-            onShare = { ShareFileUtils.shareText(context, video.filePath, "Share video"); menuVideo = null },
+        val meta = state.localVideoMeta.firstOrNull { it.filePath == video.filePath }
+        val isPlayed = meta?.isPlayed == true
+        val isFavorite = favoritePaths.contains(video.filePath)
+        // Only a video in a saved group can be removed from it (auto-suggested groups
+        // exist only in the computed list, so there is nothing to remove it from).
+        val inSavedGroup = meta?.groupId != null
+        fun close() { menuVideo = null }
+        LocalVideoActionsSheet(
+            title = video.name,
+            isPlayed = isPlayed,
+            isFavorite = isFavorite,
+            inSavedGroup = inSavedGroup,
+            onDismiss = { close() },
+            onPlay = { onPlayVideo(video.filePath, video.name, false); close() },
+            onPlayFromStart = {
+                viewModel.requestPlayFromStart(video.filePath)
+                onPlayVideo(video.filePath, video.name, false)
+                close()
+            },
+            onPlayAll = {
+                // Inside an open group, "all" means that group; otherwise the library list.
+                val source = groupPlaybackTarget?.videos
+                    ?.takeIf { g -> g.any { it.filePath == video.filePath } }
+                    ?: displayOrderVideos
+                viewModel.replaceQueue(source.dropWhile { it.filePath != video.filePath }.drop(1))
+                onPlayVideo(video.filePath, video.name, false)
+                close()
+            },
+            onPlayAsAudio = {
+                viewModel.playerManager.setAudioOnlyModeEnabled(true)
+                onPlayVideo(video.filePath, video.name, false)
+                close()
+            },
+            onAddToQueue = {
+                viewModel.enqueue(video)
+                Toast.makeText(context, "Added to play queue", Toast.LENGTH_SHORT).show()
+                close()
+            },
+            onInsertNext = {
+                viewModel.enqueueNext(video)
+                Toast.makeText(context, "Will play next", Toast.LENGTH_SHORT).show()
+                close()
+            },
+            onDownloadSubtitles = { LocalVideoActions.searchSubtitles(context, video); close() },
             onInfo = {
                 infoTarget = MediaInfoTarget(
                     title = video.name,
@@ -158,12 +235,46 @@ fun VideoLibraryScreen(
                         "Size" to formatFileSize(video.size)
                     )
                 )
-                menuVideo = null
+                close()
             },
-            onDelete = { deleteVideoTarget = video; menuVideo = null },
-            favoriteState = null,
-            playedState = isPlayed to { viewModel.setVideoPlayed(video, !isPlayed) },
-            onAddToVideoGroup = { addToGroupTarget = video; menuVideo = null }
+            onAddToPlaylist = { addToPlaylistTarget = video.name to video.filePath; close() },
+            onAddToVideoGroup = { addToGroupTarget = video; close() },
+            onSetAsRingtone = {
+                when (LocalVideoActions.setAsRingtone(context, video)) {
+                    RingtoneResult.SET -> Toast.makeText(context, "Ringtone set", Toast.LENGTH_SHORT).show()
+                    RingtoneResult.NEEDS_PERMISSION -> Toast.makeText(
+                        context, "Allow \"Modify system settings\", then try again", Toast.LENGTH_LONG
+                    ).show()
+                    RingtoneResult.FAILED -> Toast.makeText(
+                        context, "This file can't be used as a ringtone", Toast.LENGTH_LONG
+                    ).show()
+                }
+                close()
+            },
+            onToggleFavorite = {
+                val nowFavorite = LocalVideoFavorites.toggle(context, video.filePath)
+                Toast.makeText(
+                    context,
+                    if (nowFavorite) "Added to favourites" else "Removed from favourites",
+                    Toast.LENGTH_SHORT
+                ).show()
+                close()
+            },
+            onDelete = { deleteVideoTarget = video; close() },
+            onShare = { ShareFileUtils.shareText(context, video.filePath, "Share video"); close() },
+            onCreateShortcut = {
+                if (!LocalVideoActions.pinShortcut(context, video)) {
+                    Toast.makeText(context, "Your launcher doesn't support pinned shortcuts", Toast.LENGTH_LONG).show()
+                }
+                close()
+            },
+            onRemoveFromGroup = {
+                viewModel.removeVideoFromGroup(video)
+                groupPlaybackTarget = null
+                close()
+            },
+            onTogglePlayed = { viewModel.setVideoPlayed(video, !isPlayed); close() },
+            onBrowseParent = { browseParentTarget = video; close() }
         )
     }
 
@@ -171,6 +282,7 @@ fun VideoLibraryScreen(
         val channel = menuChannel!!
         val isFavorite = state.favoriteChannelIds.contains(channel.channelId)
         MediaActionsMenu(
+            title = channel.name,
             onDismiss = { menuChannel = null },
             onAddToPlaylist = { addToPlaylistTarget = channel.name to channel.streamUrl; menuChannel = null },
             onShare = { ShareFileUtils.shareText(context, channel.streamUrl, "Share channel"); menuChannel = null },
@@ -231,7 +343,15 @@ fun VideoLibraryScreen(
         ConfirmDeleteDialog(
             itemName = video.name,
             message = "This permanently deletes the file from your device. This can't be undone.",
-            onConfirm = { requestDeleteVideo(video); deleteVideoTarget = null },
+            onConfirm = {
+                deleteVideoTarget = null
+                if (!com.dk.tvplayer.util.ParentalControl.interceptForSafeMode(
+                        "Safe mode is on — enter your PIN to delete this video"
+                    ) { requestDeleteVideo(video) }
+                ) {
+                    requestDeleteVideo(video)
+                }
+            },
             onDismiss = { deleteVideoTarget = null }
         )
     }
@@ -245,15 +365,52 @@ fun VideoLibraryScreen(
         )
     }
 
+    browseParentTarget?.let { video ->
+        val parent = java.io.File(video.filePath).parentFile
+        val siblings = state.localVideos.filter { java.io.File(it.filePath).parentFile == parent }
+        AlertDialog(
+            onDismissRequest = { browseParentTarget = null },
+            title = { Text(parent?.name ?: "Folder") },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                    siblings.forEach { sibling ->
+                        Text(
+                            text = sibling.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    browseParentTarget = null
+                                    onPlayVideo(sibling.filePath, sibling.name, false)
+                                }
+                                .padding(vertical = 10.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { browseParentTarget = null }) { Text("Close") } }
+        )
+    }
+
     // ---- Video group dialogs ----
 
     if (menuGroup != null) {
         val group = menuGroup!!
         VideoGroupActionsMenu(
             group = group,
+            title = group.displayName,
             onDismiss = { menuGroup = null },
             onPlayAll = {
-                group.videos.firstOrNull()?.let { onPlayVideo(it.filePath, it.name, false) }
+                group.videos.firstOrNull()?.let { first ->
+                    viewModel.replaceQueue(group.videos.drop(1))
+                    onPlayVideo(first.filePath, first.name, false)
+                }
+                menuGroup = null
+            },
+            onAddToQueue = {
+                viewModel.enqueueAll(group.videos)
+                Toast.makeText(context, "Added to play queue", Toast.LENGTH_SHORT).show()
                 menuGroup = null
             },
             onAddToPlaylist = {
@@ -317,7 +474,8 @@ fun VideoLibraryScreen(
             onPick = { video ->
                 onPlayVideo(video.filePath, video.name, false)
                 groupPlaybackTarget = null
-            }
+            },
+            onMenu = { video -> menuVideo = video }
         )
     }
 
@@ -446,14 +604,17 @@ fun VideoLibraryScreen(
                                         video = item.video,
                                         showThumbnail = state.appSettings.videoThumbnailsEnabled,
                                         isPlayed = item.isPlayed,
+                                        isFavorite = favoritePaths.contains(item.video.filePath),
                                         onClick = { onPlayVideo(item.video.filePath, item.video.name, false) },
                                         onLongClick = { menuVideo = item.video },
+                                        onMenuClick = { menuVideo = item.video },
                                         modifier = Modifier.animateItem()
                                     )
                                     is LocalVideoDisplayItem.Group -> VideoGroupCard(
                                         group = item,
                                         onClick = { groupPlaybackTarget = item },
                                         onLongClick = { menuGroup = item },
+                                        onMenuClick = { menuGroup = item },
                                         modifier = Modifier.animateItem()
                                     )
                                 }
@@ -466,14 +627,17 @@ fun VideoLibraryScreen(
                                     video = item.video,
                                     showThumbnail = state.appSettings.videoThumbnailsEnabled,
                                     isPlayed = item.isPlayed,
+                                        isFavorite = favoritePaths.contains(item.video.filePath),
                                     onClick = { onPlayVideo(item.video.filePath, item.video.name, false) },
                                     onLongClick = { menuVideo = item.video },
+                                        onMenuClick = { menuVideo = item.video },
                                     modifier = Modifier.animateItem()
                                 )
                                 is LocalVideoDisplayItem.Group -> VideoGroupCard(
                                     group = item,
                                     onClick = { groupPlaybackTarget = item },
                                     onLongClick = { menuGroup = item },
+                                        onMenuClick = { menuGroup = item },
                                     modifier = Modifier.animateItem()
                                 )
                             }
@@ -799,8 +963,10 @@ fun LocalVideoCard(
     video: LocalVideoItem,
     showThumbnail: Boolean,
     isPlayed: Boolean = false,
+    isFavorite: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
+    onMenuClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -861,19 +1027,35 @@ fun LocalVideoCard(
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = video.name,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                color = if (isPlayed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = formatDuration(video.duration),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(verticalAlignment = Alignment.Top) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = video.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (isPlayed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = formatDuration(video.duration),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (isFavorite) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                Icons.Default.Favorite,
+                                contentDescription = "Favourite",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                    }
+                }
+                if (onMenuClick != null) CardMenuButton(onMenuClick)
+            }
         }
     }
 }
@@ -953,13 +1135,74 @@ private fun formatFileSize(bytes: Long): String {
  *  video and an IPTV channel have quite different metadata worth surfacing. */
 private data class MediaInfoTarget(val title: String, val lines: List<Pair<String, String>>)
 
+/** Full per-video action sheet (VLC-style) for local videos. */
+@Composable
+private fun LocalVideoActionsSheet(
+    title: String,
+    isPlayed: Boolean,
+    isFavorite: Boolean,
+    inSavedGroup: Boolean,
+    onDismiss: () -> Unit,
+    onPlay: () -> Unit,
+    onPlayFromStart: () -> Unit,
+    onPlayAll: () -> Unit,
+    onPlayAsAudio: () -> Unit,
+    onAddToQueue: () -> Unit,
+    onInsertNext: () -> Unit,
+    onDownloadSubtitles: () -> Unit,
+    onInfo: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+    onAddToVideoGroup: () -> Unit,
+    onSetAsRingtone: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onDelete: () -> Unit,
+    onShare: () -> Unit,
+    onCreateShortcut: () -> Unit,
+    onRemoveFromGroup: () -> Unit,
+    onTogglePlayed: () -> Unit,
+    onBrowseParent: () -> Unit
+) {
+    ActionsBottomSheet(title = title, onDismiss = onDismiss) {
+        SheetAction(Icons.Default.PlayArrow, "Play", onPlay)
+        SheetAction(Icons.Default.Replay, "Play from start", onPlayFromStart)
+        SheetAction(Icons.Default.PlaylistPlay, "Play all", onPlayAll)
+        SheetAction(Icons.Default.Headphones, "Play as audio", onPlayAsAudio)
+        SheetAction(Icons.Default.AddToQueue, "Add to play queue", onAddToQueue)
+        SheetAction(Icons.Default.QueuePlayNext, "Insert next", onInsertNext)
+        SheetAction(Icons.Default.Subtitles, "Download subtitles", onDownloadSubtitles)
+        SheetAction(Icons.Default.Info, "Information", onInfo)
+        SheetAction(Icons.Default.PlaylistAdd, "Add to playlist", onAddToPlaylist)
+        SheetAction(Icons.Default.Movie, "Add to video group", onAddToVideoGroup)
+        SheetAction(Icons.Default.Phone, "Set as ringtone", onSetAsRingtone)
+        SheetAction(
+            icon = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+            label = if (isFavorite) "Remove from favourites" else "Add to favourites",
+            onClick = onToggleFavorite
+        )
+        SheetAction(Icons.Default.Delete, "Delete", onDelete, tint = MaterialTheme.colorScheme.error)
+        SheetAction(Icons.Default.Share, "Share", onShare)
+        SheetAction(Icons.Default.AddToHomeScreen, "Create a launcher shortcut", onCreateShortcut)
+        if (inSavedGroup) {
+            SheetAction(Icons.Default.RemoveCircleOutline, "Remove from video group", onRemoveFromGroup)
+        }
+        SheetAction(
+            icon = if (isPlayed) Icons.Default.Close else Icons.Default.Check,
+            label = if (isPlayed) "Mark as not played" else "Mark as played",
+            onClick = onTogglePlayed
+        )
+        SheetAction(Icons.Default.Folder, "Browse parent", onBrowseParent)
+    }
+}
+
 /**
- * Long-press context menu shared by both local videos and IPTV channels (VLC-style).
- * [favoriteState] is null for local videos, which have no favorite concept yet; when
- * present it's (isFavorite, onToggle) and renders a Favorite/Unfavorite row.
+ * Bottom-sheet actions (VLC-style) shared by both local videos and IPTV channels, opened
+ * from the card's three-dot button or a long-press. [favoriteState] is null for local
+ * videos, which have no favorite concept yet; when present it's (isFavorite, onToggle).
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MediaActionsMenu(
+    title: String,
     onDismiss: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onShare: () -> Unit,
@@ -969,58 +1212,91 @@ private fun MediaActionsMenu(
     playedState: Pair<Boolean, () -> Unit>? = null,
     onAddToVideoGroup: (() -> Unit)? = null
 ) {
-    // A DropdownMenu needs an anchor composable to position itself against; since this
-    // is triggered by a long-press anywhere on a grid card rather than a fixed icon,
-    // it's anchored to an invisible zero-size Box instead, which centers it on screen
-    // via DropdownMenu's own default positioning fallback.
-    Box {
-        DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-            if (favoriteState != null) {
-                val (isFavorite, onToggle) = favoriteState
-                DropdownMenuItem(
-                    text = { Text(if (isFavorite) "Remove from Favorites" else "Add to Favorites") },
-                    leadingIcon = {
-                        Icon(if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder, contentDescription = null)
-                    },
-                    onClick = { onToggle(); onDismiss() }
-                )
-            }
-            if (playedState != null) {
-                val (isPlayed, onToggle) = playedState
-                DropdownMenuItem(
-                    text = { Text(if (isPlayed) "Mark as Not Played" else "Mark as Played") },
-                    leadingIcon = { Icon(Icons.Default.Check, contentDescription = null) },
-                    onClick = { onToggle(); onDismiss() }
-                )
-            }
-            if (onAddToVideoGroup != null) {
-                DropdownMenuItem(
-                    text = { Text("Add to Video Group") },
-                    leadingIcon = { Icon(Icons.Default.Movie, contentDescription = null) },
-                    onClick = onAddToVideoGroup
-                )
-            }
-            DropdownMenuItem(
-                text = { Text("Add to Playlist") },
-                leadingIcon = { Icon(Icons.Default.PlaylistAdd, contentDescription = null) },
-                onClick = onAddToPlaylist
-            )
-            DropdownMenuItem(
-                text = { Text("Share") },
-                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
-                onClick = onShare
-            )
-            DropdownMenuItem(
-                text = { Text("Information") },
-                leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
-                onClick = onInfo
-            )
-            DropdownMenuItem(
-                text = { Text("Delete") },
-                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-                onClick = onDelete
+    ActionsBottomSheet(title = title, onDismiss = onDismiss) {
+        if (favoriteState != null) {
+            val (isFavorite, onToggle) = favoriteState
+            SheetAction(
+                icon = if (isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                label = if (isFavorite) "Remove from favourites" else "Add to favourites",
+                onClick = { onToggle(); onDismiss() }
             )
         }
+        SheetAction(Icons.Default.PlaylistAdd, "Add to playlist", onAddToPlaylist)
+        if (onAddToVideoGroup != null) {
+            SheetAction(Icons.Default.Movie, "Add to video group", onAddToVideoGroup)
+        }
+        if (playedState != null) {
+            val (isPlayed, onToggle) = playedState
+            SheetAction(
+                icon = if (isPlayed) Icons.Default.Close else Icons.Default.Check,
+                label = if (isPlayed) "Mark as not played" else "Mark as played",
+                onClick = { onToggle(); onDismiss() }
+            )
+        }
+        SheetAction(Icons.Default.Share, "Share", onShare)
+        SheetAction(Icons.Default.Info, "Information", onInfo)
+        SheetAction(Icons.Default.Delete, "Delete", onDelete, tint = MaterialTheme.colorScheme.error)
+    }
+}
+
+/** Modal bottom sheet container: title on top, then a tall list of icon + label rows. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ActionsBottomSheet(
+    title: String,
+    onDismiss: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ) {
+        Column(
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 24.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
+            )
+            content()
+        }
+    }
+}
+
+@Composable
+private fun SheetAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(26.dp))
+        Spacer(modifier = Modifier.width(24.dp))
+        Text(text = label, style = MaterialTheme.typography.titleMedium, color = tint)
+    }
+}
+
+/** The small three-dot button shown on every card, opening the same sheet as a long-press. */
+@Composable
+private fun CardMenuButton(onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.size(32.dp)) {
+        Icon(
+            Icons.Default.MoreVert,
+            contentDescription = "More options",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -1148,6 +1424,7 @@ fun VideoGroupCard(
     group: LocalVideoDisplayItem.Group,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
+    onMenuClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -1183,18 +1460,23 @@ fun VideoGroupCard(
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = group.displayName,
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "${group.playedCount}/${group.videos.size} played",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(verticalAlignment = Alignment.Top) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = group.displayName,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${group.playedCount}/${group.videos.size} played",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (onMenuClick != null) CardMenuButton(onMenuClick)
+            }
         }
     }
 }
@@ -1202,53 +1484,30 @@ fun VideoGroupCard(
 @Composable
 private fun VideoGroupActionsMenu(
     group: LocalVideoDisplayItem.Group,
+    title: String,
     onDismiss: () -> Unit,
     onPlayAll: () -> Unit,
+    onAddToQueue: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onRename: () -> Unit,
     onUngroup: () -> Unit,
     onMarkAllPlayed: () -> Unit,
     onMarkAllNotPlayed: () -> Unit
 ) {
-    Box {
-        DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-            DropdownMenuItem(
-                text = { Text("Play All") },
-                leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null) },
-                onClick = onPlayAll
-            )
-            DropdownMenuItem(
-                text = { Text("Add to Playlist") },
-                leadingIcon = { Icon(Icons.Default.PlaylistAdd, contentDescription = null) },
-                onClick = onAddToPlaylist
-            )
-            DropdownMenuItem(
-                text = { Text("Rename Video Group") },
-                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
-                onClick = onRename
-            )
-            // Ungrouping an auto-suggested group (never persisted — group.group == null)
-            // is a no-op by definition: there's nothing in the DB to dissolve, and the
-            // grouping heuristic would just re-suggest it again on next recompute. Only
-            // offer it for a real, persisted group.
-            if (group.group != null) {
-                DropdownMenuItem(
-                    text = { Text("Ungroup") },
-                    leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
-                    onClick = onUngroup
-                )
-            }
-            DropdownMenuItem(
-                text = { Text("Mark all as Played") },
-                leadingIcon = { Icon(Icons.Default.Check, contentDescription = null) },
-                onClick = onMarkAllPlayed
-            )
-            DropdownMenuItem(
-                text = { Text("Mark all as Not Played") },
-                leadingIcon = { Icon(Icons.Default.Close, contentDescription = null) },
-                onClick = onMarkAllNotPlayed
-            )
+    ActionsBottomSheet(title = title, onDismiss = onDismiss) {
+        SheetAction(Icons.Default.PlaylistPlay, "Play all", onPlayAll)
+        SheetAction(Icons.Default.AddToQueue, "Add to play queue", onAddToQueue)
+        SheetAction(Icons.Default.PlaylistAdd, "Add to playlist", onAddToPlaylist)
+        SheetAction(Icons.Default.Edit, "Rename video group", onRename)
+        // Ungrouping an auto-suggested group (never persisted — group.group == null)
+        // is a no-op by definition: there's nothing in the DB to dissolve, and the
+        // grouping heuristic would just re-suggest it again on next recompute. Only
+        // offer it for a real, persisted group.
+        if (group.group != null) {
+            SheetAction(Icons.Default.Delete, "Ungroup", onUngroup)
         }
+        SheetAction(Icons.Default.Check, "Mark all as played", onMarkAllPlayed)
+        SheetAction(Icons.Default.Close, "Mark all as not played", onMarkAllNotPlayed)
     }
 }
 
@@ -1348,7 +1607,8 @@ private fun GroupMemberPickerDialog(
     group: LocalVideoDisplayItem.Group,
     playedPaths: Set<String>,
     onDismiss: () -> Unit,
-    onPick: (LocalVideoItem) -> Unit
+    onPick: (LocalVideoItem) -> Unit,
+    onMenu: (LocalVideoItem) -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1374,7 +1634,12 @@ private fun GroupMemberPickerDialog(
                         } else {
                             Spacer(modifier = Modifier.width(26.dp))
                         }
-                        Text(video.name, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            video.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        CardMenuButton(onClick = { onMenu(video) })
                     }
                 }
             }
