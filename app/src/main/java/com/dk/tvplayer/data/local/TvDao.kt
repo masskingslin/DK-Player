@@ -78,6 +78,9 @@ interface HistoryDao {
 
     @Query("DELETE FROM playback_history WHERE mediaUrl = :url")
     suspend fun deleteByUrl(url: String)
+
+    @Query("DELETE FROM playback_history")
+    suspend fun deleteAll()
 }
 
 @Dao

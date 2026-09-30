@@ -46,4 +46,10 @@ interface VideoGroupDao {
 
     @Delete
     suspend fun deleteMeta(meta: LocalVideoMetaEntity)
+
+    @Query("DELETE FROM local_video_meta")
+    suspend fun deleteAllMeta()
+
+    @Query("DELETE FROM video_groups")
+    suspend fun deleteAllGroups()
 }
