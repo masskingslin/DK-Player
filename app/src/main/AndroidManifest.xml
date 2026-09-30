@@ -16,12 +16,15 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- Required by PlatformScheduler (used to resume/retry offline downloads) for persisted JobScheduler jobs. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- "Pop-Up player": a real floating window that draws over other apps. This is a
          special permission the user must grant from Settings (see FloatingPlayerService);
          it can't be requested through the normal runtime-permission dialog. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- "Set as ringtone" needs the user to allow modifying system settings. -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
 
     <!-- Features: Universal Phone + TV Compatibility -->
     <uses-feature
@@ -77,6 +80,15 @@
         </service>
 
         <!-- "Pop-Up player": draggable floating video window over other apps -->
+        <service
+            android:name=".remote.RemoteAccessService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Local-network remote control web server (user-enabled)" />
+        </service>
+
         <service
             android:name=".player.FloatingPlayerService"
             android:exported="false" />
