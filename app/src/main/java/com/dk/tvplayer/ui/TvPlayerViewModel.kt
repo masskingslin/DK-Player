@@ -26,8 +26,11 @@ import com.dk.tvplayer.data.parser.PlaylistExporter
 import com.dk.tvplayer.data.repository.TvRepository
 import com.dk.tvplayer.player.TvExoPlayerManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
@@ -288,6 +291,61 @@ class TvPlayerViewModel(
         observeEpg(channel.channelId)
     }
 
+    // ---- One-shot play options & play queue (local videos) ----
+
+    /** Set by "Play from start" so the very next playMedia() for this URL ignores the
+     *  saved resume position. */
+    private var skipResumeUrl: String? = null
+
+    /** Items that play (in order) after the current one ends. */
+    private val upcomingQueue = ArrayDeque<Pair<String, String>>() // url to title
+    private val _queueSize = MutableStateFlow(0)
+    val queueSize: StateFlow<Int> = _queueSize.asStateFlow()
+
+    private val _playbackEnded = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    /** Emits whenever the active item finishes; PhoneAppRoot decides whether to advance. */
+    val playbackEnded: SharedFlow<Unit> = _playbackEnded.asSharedFlow()
+
+    /** (filePath, title) requested from outside the app UI, e.g. a launcher shortcut. */
+    val externalPlayRequest = MutableStateFlow<Pair<String, String>?>(null)
+
+    init {
+        playerManager.onPlaybackEnded = { _playbackEnded.tryEmit(Unit) }
+    }
+
+    fun requestPlayFromStart(url: String) {
+        skipResumeUrl = url
+    }
+
+    /** Replaces the whole upcoming queue (used by "Play all"). */
+    fun replaceQueue(videos: List<LocalVideoItem>) {
+        upcomingQueue.clear()
+        videos.forEach { upcomingQueue.addLast(it.filePath to it.name) }
+        _queueSize.value = upcomingQueue.size
+    }
+
+    fun enqueue(video: LocalVideoItem) {
+        upcomingQueue.addLast(video.filePath to video.name)
+        _queueSize.value = upcomingQueue.size
+    }
+
+    fun enqueueAll(videos: List<LocalVideoItem>) {
+        videos.forEach { upcomingQueue.addLast(it.filePath to it.name) }
+        _queueSize.value = upcomingQueue.size
+    }
+
+    /** "Insert next": plays right after whatever is playing now. */
+    fun enqueueNext(video: LocalVideoItem) {
+        upcomingQueue.addFirst(video.filePath to video.name)
+        _queueSize.value = upcomingQueue.size
+    }
+
+    fun popNextQueued(): Pair<String, String>? {
+        val next = upcomingQueue.removeFirstOrNull()
+        _queueSize.value = upcomingQueue.size
+        return next
+    }
+
     /**
      * Plays a piece of media, resuming from the last saved position when "Auto Resume
      * Playback" is enabled and there's a meaningful saved position (not right at the
@@ -301,7 +359,9 @@ class TvPlayerViewModel(
     fun playMedia(url: String, title: String) {
         viewModelScope.launch {
             val settings = _uiState.value.appSettings
-            val startPositionMs = if (settings.autoResumePlayback && !settings.incognitoMode) {
+            val skipResume = skipResumeUrl == url
+            if (skipResume) skipResumeUrl = null
+            val startPositionMs = if (settings.autoResumePlayback && !settings.incognitoMode && !skipResume) {
                 val entry = repository.getHistoryEntryOnce(url)
                 val savedPosition = entry?.lastPositionMs ?: 0L
                 val savedDuration = entry?.durationMs ?: 0L
@@ -378,6 +438,14 @@ class TvPlayerViewModel(
     }
 
     // ---- Local video groups & played state ----
+
+    fun clearPlaybackHistory() {
+        viewModelScope.launch { repository.clearPlaybackHistory() }
+    }
+
+    fun clearLocalVideoData() {
+        viewModelScope.launch { repository.clearLocalVideoData() }
+    }
 
     fun setVideoPlayed(video: LocalVideoItem, isPlayed: Boolean) {
         viewModelScope.launch { repository.setVideoPlayed(video.filePath, isPlayed) }
@@ -459,6 +527,7 @@ class TvPlayerViewModel(
      * channel list isn't a valid single-stream HLS/DASH manifest).
      */
     fun importM3uFromUrlIntoSelectedPlaylist(url: String, onComplete: (success: Boolean, errorMessage: String?) -> Unit) {
+        if (com.dk.tvplayer.util.ParentalControl.interceptForSafeMode("Safe mode is on — enter your PIN to change playlists") { importM3uFromUrlIntoSelectedPlaylist(url, onComplete) }) return
         val playlistId = _uiState.value.selectedPlaylist?.id
         if (playlistId == null) {
             onComplete(false, "No playlist selected")
@@ -475,12 +544,14 @@ class TvPlayerViewModel(
     // ---- Playlist management ----
 
     fun createPlaylist(name: String) {
+        if (com.dk.tvplayer.util.ParentalControl.interceptForSafeMode("Safe mode is on — enter your PIN to change playlists") { createPlaylist(name) }) return
         viewModelScope.launch { repository.createPlaylist(name.ifBlank { "New Playlist" }) }
     }
 
     /** Used by the "Add to Playlist" context-menu action's "New Playlist" option — needs
      *  the new playlist's id back so the item can go straight into it. */
     fun createPlaylistAndAddItem(name: String, title: String, url: String) {
+        if (com.dk.tvplayer.util.ParentalControl.interceptForSafeMode("Safe mode is on — enter your PIN to change playlists") { createPlaylistAndAddItem(name, title, url) }) return
         viewModelScope.launch {
             val playlistId = repository.createPlaylist(name.ifBlank { "New Playlist" })
             repository.addItemToPlaylist(playlistId, title, url)
@@ -491,6 +562,7 @@ class TvPlayerViewModel(
      *  (see VideoLibraryScreen's group "Add to Playlist" action) — avoids only the
      *  first member landing in the new playlist and the rest silently being dropped. */
     fun createPlaylistAndAddItems(name: String, items: List<Pair<String, String>>) {
+        if (com.dk.tvplayer.util.ParentalControl.interceptForSafeMode("Safe mode is on — enter your PIN to change playlists") { createPlaylistAndAddItems(name, items) }) return
         viewModelScope.launch {
             val playlistId = repository.createPlaylist(name.ifBlank { "New Playlist" })
             items.forEach { (title, url) -> repository.addItemToPlaylist(playlistId, title, url) }
@@ -501,6 +573,7 @@ class TvPlayerViewModel(
      *  to a playlist the person already has, as opposed to createPlaylistAndAddItem's
      *  "make a brand new one" path. */
     fun addToExistingPlaylist(playlistId: Long, title: String, url: String) {
+        if (com.dk.tvplayer.util.ParentalControl.interceptForSafeMode("Safe mode is on — enter your PIN to change playlists") { addToExistingPlaylist(playlistId, title, url) }) return
         viewModelScope.launch { repository.addItemToPlaylist(playlistId, title, url) }
     }
 
@@ -531,10 +604,12 @@ class TvPlayerViewModel(
     }
 
     fun renamePlaylist(playlist: PlaylistEntity, newName: String) {
+        if (com.dk.tvplayer.util.ParentalControl.interceptForSafeMode("Safe mode is on — enter your PIN to change playlists") { renamePlaylist(playlist, newName) }) return
         viewModelScope.launch { repository.renamePlaylist(playlist, newName) }
     }
 
     fun deletePlaylist(playlist: PlaylistEntity) {
+        if (com.dk.tvplayer.util.ParentalControl.interceptForSafeMode("Safe mode is on — enter your PIN to change playlists") { deletePlaylist(playlist) }) return
         viewModelScope.launch {
             repository.deletePlaylist(playlist)
             _uiState.update {
@@ -555,32 +630,38 @@ class TvPlayerViewModel(
     }
 
     fun addChannelToPlaylist(playlistId: Long, channel: TvChannelEntity) {
+        if (com.dk.tvplayer.util.ParentalControl.interceptForSafeMode("Safe mode is on — enter your PIN to change playlists") { addChannelToPlaylist(playlistId, channel) }) return
         viewModelScope.launch {
             repository.addItemToPlaylist(playlistId, channel.name, channel.streamUrl, channel.groupTitle, channel.logoUrl)
         }
     }
 
     fun addStreamToPlaylist(playlistId: Long, stream: StreamEntity) {
+        if (com.dk.tvplayer.util.ParentalControl.interceptForSafeMode("Safe mode is on — enter your PIN to change playlists") { addStreamToPlaylist(playlistId, stream) }) return
         viewModelScope.launch {
             repository.addItemToPlaylist(playlistId, stream.name, stream.streamUrl, stream.groupTitle, stream.logoUrl)
         }
     }
 
     fun addCustomItemToPlaylist(playlistId: Long, title: String, url: String) {
+        if (com.dk.tvplayer.util.ParentalControl.interceptForSafeMode("Safe mode is on — enter your PIN to change playlists") { addCustomItemToPlaylist(playlistId, title, url) }) return
         viewModelScope.launch { repository.addItemToPlaylist(playlistId, title, url) }
     }
 
     fun removeItemFromPlaylist(item: PlaylistItemEntity) {
+        if (com.dk.tvplayer.util.ParentalControl.interceptForSafeMode("Safe mode is on — enter your PIN to change playlists") { removeItemFromPlaylist(item) }) return
         viewModelScope.launch { repository.removeItemFromPlaylist(item) }
     }
 
     fun importM3uIntoSelectedPlaylist(inputStream: InputStream) {
+        if (com.dk.tvplayer.util.ParentalControl.interceptForSafeMode("Safe mode is on — enter your PIN to change playlists") { importM3uIntoSelectedPlaylist(inputStream) }) return
         val playlistId = _uiState.value.selectedPlaylist?.id ?: return
         viewModelScope.launch { repository.importM3uIntoPlaylist(playlistId, inputStream) }
     }
 
     /** Moves an item one slot up/down within the currently viewed playlist and persists the new order. */
     fun movePlaylistItem(item: PlaylistItemEntity, moveUp: Boolean) {
+        if (com.dk.tvplayer.util.ParentalControl.interceptForSafeMode("Safe mode is on — enter your PIN to change playlists") { movePlaylistItem(item, moveUp) }) return
         val current = _uiState.value.selectedPlaylistItems.toMutableList()
         val index = current.indexOfFirst { it.id == item.id }
         if (index < 0) return
@@ -624,6 +705,7 @@ class TvPlayerViewModel(
     }
 
     fun deleteSelectedPlaylistItems() {
+        if (com.dk.tvplayer.util.ParentalControl.interceptForSafeMode("Safe mode is on — enter your PIN to change playlists") { deleteSelectedPlaylistItems() }) return
         val selectedIds = _uiState.value.selectedPlaylistItemIds
         val items = _uiState.value.selectedPlaylistItems.filter { selectedIds.contains(it.id) }
         if (items.isEmpty()) return
@@ -634,6 +716,7 @@ class TvPlayerViewModel(
     }
 
     fun moveSelectedPlaylistItemsTo(targetPlaylistId: Long) {
+        if (com.dk.tvplayer.util.ParentalControl.interceptForSafeMode("Safe mode is on — enter your PIN to change playlists") { moveSelectedPlaylistItemsTo(targetPlaylistId) }) return
         val selectedIds = _uiState.value.selectedPlaylistItemIds
         val items = _uiState.value.selectedPlaylistItems.filter { selectedIds.contains(it.id) }
         if (items.isEmpty()) return

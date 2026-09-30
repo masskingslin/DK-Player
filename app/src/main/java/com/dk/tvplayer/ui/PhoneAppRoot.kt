@@ -15,8 +15,13 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -33,6 +38,12 @@ import com.dk.tvplayer.ui.library.VideoLibraryScreen
 import com.dk.tvplayer.ui.player.PhonePlayerScreen
 import com.dk.tvplayer.ui.playlists.PlaylistDetailScreen
 import com.dk.tvplayer.ui.playlists.PlaylistsScreen
+import com.dk.tvplayer.ui.advanced.AdvancedScreen
+import com.dk.tvplayer.ui.parental.ParentalControlScreen
+import com.dk.tvplayer.ui.parental.PinPromptHost
+import com.dk.tvplayer.ui.parental.SettingsPinGate
+import com.dk.tvplayer.ui.advanced.DebugLogsScreen
+import com.dk.tvplayer.ui.remote.RemoteAccessScreen
 import com.dk.tvplayer.ui.settings.SettingsScreen
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -64,6 +75,10 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
     // reached via Settings or Playlists, matching the player's own behavior.
     val hideBottomBar = currentRoute?.startsWith("player") == true ||
         currentRoute == "downloads" ||
+        currentRoute == "remote_access" ||
+        currentRoute == "advanced" ||
+        currentRoute == "parental_control" ||
+        currentRoute == "debug_logs" ||
         currentRoute?.startsWith("playlist_detail") == true
 
     fun navigateToPlayer(url: String, title: String, isLive: Boolean = false) {
@@ -71,6 +86,33 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
         val encodedTitle = URLEncoder.encode(title, StandardCharsets.UTF_8.toString())
         navController.navigate("player/$encodedUrl/$encodedTitle/$isLive")
     }
+
+    // Play-queue advance: when the current item ends while the player screen is up,
+    // swap it for the next queued one (replacing the player route so Back still exits).
+    val latestRoute by rememberUpdatedState(currentRoute)
+    LaunchedEffect(Unit) {
+        viewModel.playbackEnded.collect {
+            if (latestRoute?.startsWith("player") == true) {
+                val next = viewModel.popNextQueued() ?: return@collect
+                val encodedUrl = URLEncoder.encode(next.first, StandardCharsets.UTF_8.toString())
+                val encodedTitle = URLEncoder.encode(next.second, StandardCharsets.UTF_8.toString())
+                navController.navigate("player/$encodedUrl/$encodedTitle/false") {
+                    popUpTo("player/{mediaUrl}/{title}/{isLive}") { inclusive = true }
+                }
+            }
+        }
+    }
+
+    // Launcher-shortcut / external "play this file" requests.
+    val externalRequest by viewModel.externalPlayRequest.collectAsState()
+    LaunchedEffect(externalRequest) {
+        externalRequest?.let { (path, title) ->
+            navigateToPlayer(path, title)
+            viewModel.externalPlayRequest.value = null
+        }
+    }
+
+    PinPromptHost()
 
     Scaffold(
         bottomBar = {
@@ -145,10 +187,42 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
             }
 
             composable(Screen.Settings.route) {
-                SettingsScreen(
+                val restrictSettings by com.dk.tvplayer.util.ParentalControl.restrictSettings.collectAsState()
+                var unlocked by remember { mutableStateOf(com.dk.tvplayer.util.ParentalControl.isSettingsUnlocked()) }
+                if (!restrictSettings || unlocked || com.dk.tvplayer.util.ParentalControl.isSettingsUnlocked()) {
+                    SettingsScreen(
+                        viewModel = viewModel,
+                        onOpenDownloads = { navController.navigate("downloads") },
+                        onOpenRemoteAccess = { navController.navigate("remote_access") },
+                        onOpenAdvanced = { navController.navigate("advanced") },
+                        onOpenParentalControl = { navController.navigate("parental_control") }
+                    )
+                } else {
+                    SettingsPinGate(onUnlocked = {
+                        com.dk.tvplayer.util.ParentalControl.markSettingsUnlocked()
+                        unlocked = true
+                    })
+                }
+            }
+
+            composable("parental_control") {
+                ParentalControlScreen(onBack = { navController.popBackStack() })
+            }
+
+            composable("advanced") {
+                AdvancedScreen(
                     viewModel = viewModel,
-                    onOpenDownloads = { navController.navigate("downloads") }
+                    onBack = { navController.popBackStack() },
+                    onOpenDebugLogs = { navController.navigate("debug_logs") }
                 )
+            }
+
+            composable("debug_logs") {
+                DebugLogsScreen(onBack = { navController.popBackStack() })
+            }
+
+            composable("remote_access") {
+                RemoteAccessScreen(onBack = { navController.popBackStack() })
             }
 
             composable("downloads") {
