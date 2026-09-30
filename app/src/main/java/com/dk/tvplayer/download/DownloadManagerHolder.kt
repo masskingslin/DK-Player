@@ -33,7 +33,7 @@ import java.util.concurrent.Executor
  *     its own internal writer) should end up on disk.
  */
 @UnstableApi
-class DownloadManagerHolder(context: Context) {
+class DownloadManagerHolder(context: Context, userAgent: String? = null) {
 
     private val downloadDirectory: File = File(context.filesDir, "downloads")
     private val databaseProvider = StandaloneDatabaseProvider(context)
@@ -54,7 +54,13 @@ class DownloadManagerHolder(context: Context) {
     // Handles http(s) URLs (IPTV channels, custom streams, downloads) AND local
     // device file / content URIs (local videos, local audio) uniformly — a plain
     // DefaultHttpDataSource.Factory only handled the former.
-    private val upstreamDataSourceFactory = DefaultDataSource.Factory(context, DefaultHttpDataSource.Factory())
+    private val upstreamDataSourceFactory = DefaultDataSource.Factory(
+        context,
+        DefaultHttpDataSource.Factory().apply {
+            // Custom user agent from Advanced settings (applied at startup).
+            if (!userAgent.isNullOrBlank()) setUserAgent(userAgent)
+        }
+    )
 
     val cacheDataSourceFactory: CacheDataSource.Factory = CacheDataSource.Factory()
         .setCache(downloadCache)
