@@ -37,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -74,6 +75,34 @@ fun HomeHubScreen(
     var showDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+
+    // "Show missing media" off hides history entries whose local file has been deleted.
+    val showMissingMedia by com.dk.tvplayer.util.UiPrefs.showMissingMedia.collectAsState()
+    val visibleHistory = remember(state.history, showMissingMedia) {
+        if (showMissingMedia) state.history
+        else state.history.filter { it.mediaUrl.startsWith("http") || java.io.File(it.mediaUrl).exists() }
+    }
+
+    // "Show last playlist tip": once per app start, offer to resume what was playing last.
+    val showLastTip by com.dk.tvplayer.util.UiPrefs.showLastPlaylistTip.collectAsState()
+    LaunchedEffect(visibleHistory, showLastTip) {
+        if (!showLastTip || viewModel.resumeTipShown || state.appSettings.incognitoMode) return@LaunchedEffect
+        val last = visibleHistory.firstOrNull {
+            !it.isLiveStream && it.durationMs > 0 && it.lastPositionMs > 5_000 &&
+                it.lastPositionMs < it.durationMs * 0.95 &&
+                (it.mediaUrl.startsWith("http") || java.io.File(it.mediaUrl).exists())
+        } ?: return@LaunchedEffect
+        viewModel.resumeTipShown = true
+        val secs = last.lastPositionMs / 1000
+        val result = snackbarHostState.showSnackbar(
+            message = "Resume \"${last.title}\" from ${secs / 60}:${"%02d".format(secs % 60)}?",
+            actionLabel = "Resume",
+            duration = androidx.compose.material3.SnackbarDuration.Long
+        )
+        if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+            onPlayMedia(last.mediaUrl, last.title, false)
+        }
+    }
 
     if (showDialog) {
         NewStreamDialog(
@@ -132,12 +161,12 @@ fun HomeHubScreen(
                 )
             }
 
-            if (state.history.isNotEmpty()) {
+            if (visibleHistory.isNotEmpty()) {
                 item {
                     SectionHeader("Continue Watching")
                     Spacer(modifier = Modifier.height(12.dp))
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        items(state.history, key = { it.mediaUrl }) { historyItem ->
+                        items(visibleHistory, key = { it.mediaUrl }) { historyItem ->
                             HistoryCard(
                                 history = historyItem,
                                 onClick = { onPlayMedia(historyItem.mediaUrl, historyItem.title, false) }
