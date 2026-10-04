@@ -23,6 +23,8 @@
          special permission the user must grant from Settings (see FloatingPlayerService);
          it can't be requested through the normal runtime-permission dialog. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- "Media cover on Lockscreen" replaces the lock screen wallpaper while media plays. -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
     <!-- "Set as ringtone" needs the user to allow modifying system settings. -->
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
 
