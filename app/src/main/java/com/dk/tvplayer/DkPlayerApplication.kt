@@ -41,6 +41,11 @@ class DkPlayerApplication : Application() {
         com.dk.tvplayer.util.DebugLogger.init(this)
         com.dk.tvplayer.util.AdvancedPrefs.init(this)
         com.dk.tvplayer.util.ParentalControl.init(this)
+        com.dk.tvplayer.util.UiPrefs.init(this)
+        com.dk.tvplayer.util.PlaybackPrefs.init(this)
+        com.dk.tvplayer.util.MediaListCache.init(this)
+        com.dk.tvplayer.util.SubtitlePrefs.init(this)
+        com.dk.tvplayer.util.LockscreenCover.init(this)
         com.dk.tvplayer.remote.RemoteAccessConfig.init(this)
         // Hardware acceleration is baked into the player at construction time (see
         // TvExoPlayerManager's doc comment), so this one settings read has to happen
@@ -58,7 +63,8 @@ class DkPlayerApplication : Application() {
         )
         playerManager = TvExoPlayerManager(
             this,
-            hwAccelerationEnabled = hwAccel,
+            hwAccelerationEnabled = hwAccel &&
+                com.dk.tvplayer.util.PlaybackPrefs.hardwareAcceleration.value != com.dk.tvplayer.util.HardwareAcceleration.DISABLED,
             cacheDataSourceFactory = downloadManagerHolder.cacheDataSourceFactory,
             networkCachingMs = com.dk.tvplayer.util.AdvancedPrefs.networkCachingMs.value
         )

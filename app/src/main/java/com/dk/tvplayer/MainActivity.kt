@@ -187,7 +187,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        enterPip()
+        // Background/PiP mode: only "Picture-in-picture" shrinks the video into a window.
+        if (com.dk.tvplayer.util.PlaybackPrefs.backgroundMode.value == com.dk.tvplayer.util.BackgroundMode.PIP) {
+            enterPip()
+        }
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
@@ -202,7 +205,9 @@ class MainActivity : ComponentActivity() {
         // Leave local playback running when in PiP, when casting (irrelevant to this
         // device's screen), or when the user opted in to background audio playback.
         if (!isInPictureInPictureMode && !FloatingPlayerState.isActive) {
-            val backgroundAudioEnabled = runBlocking { app.settingsDataStore.settingsFlow.first().backgroundAudioPlayback }
+            val backgroundAudioEnabled = viewModel.effectiveBackgroundPlayback(
+                runBlocking { app.settingsDataStore.settingsFlow.first().backgroundAudioPlayback }
+            )
             val isCasting = viewModel.playerManager.isCastingFlow.value
             if (!backgroundAudioEnabled && !isCasting && viewModel.playerManager.exoPlayer.isPlaying) {
                 viewModel.playerManager.exoPlayer.pause()
@@ -217,6 +222,7 @@ class MainActivity : ComponentActivity() {
         // Application, not the service. The service simply gets restarted the next time
         // playback continues while the app is backgrounded.
         runCatching { stopService(Intent(this, PlaybackService::class.java)) }
+        viewModel.notifyAppForegrounded()
     }
 
     private fun requestRequiredPermissions() {
@@ -235,7 +241,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppEntry(viewModel: TvPlayerViewModel) {
     val context = LocalContext.current
-    val isTv = remember { DeviceType.isTelevision(context) }
+    val isTv = remember { DeviceType.isTelevision(context) || com.dk.tvplayer.util.UiPrefs.forceTvInterface.value }
 
     if (isTv) {
         TvMainScreen(viewModel = viewModel)
