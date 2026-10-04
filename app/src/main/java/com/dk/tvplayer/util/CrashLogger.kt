@@ -53,6 +53,7 @@ object CrashLogger {
             append(stackTraceWriter.toString())
         }
         file.writeText(report)
+        copyToDownloads(context, "dk-player-crash_$timestamp.txt", report)
 
         // Keep only the most recent MAX_LOGS_KEPT files so this can't grow unbounded on
         // a device that crashes repeatedly before anyone gets a chance to look at it.
@@ -60,6 +61,26 @@ object CrashLogger {
             ?.sortedByDescending { it.lastModified() }
             ?.drop(MAX_LOGS_KEPT)
             ?.forEach { it.delete() }
+    }
+
+    /**
+     * Also saves the report to the Downloads folder so it can be read (and sent) even if the app
+     * crashes too early to open its own Settings. Android 10+ lets an app add its own files to
+     * Downloads without any permission; older versions skip this and rely on the in-app log.
+     */
+    private fun copyToDownloads(context: Context, fileName: String, text: String) {
+        if (android.os.Build.VERSION.SDK_INT < 29) return
+        runCatching {
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(android.provider.MediaStore.Downloads.MIME_TYPE, "text/plain")
+                put(android.provider.MediaStore.Downloads.RELATIVE_PATH, "Download/DK Player")
+            }
+            val uri = context.contentResolver.insert(
+                android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values
+            ) ?: return
+            context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
+        }
     }
 
     private fun appVersionName(context: Context): String = runCatching {
