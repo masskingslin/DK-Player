@@ -143,6 +143,7 @@ fun VideoLibraryScreen(
 
     LaunchedEffect(Unit) { LocalVideoFavorites.load(context) }
     val favoritePaths by LocalVideoFavorites.favorites.collectAsState()
+    val showSeenMarker by com.dk.tvplayer.util.UiPrefs.showSeenMarker.collectAsState()
 
     // Videos in the order the library lists them (groups expanded in place) — what
     // "Play all" queues up after the chosen video.
@@ -367,30 +368,31 @@ fun VideoLibraryScreen(
 
     browseParentTarget?.let { video ->
         val parent = java.io.File(video.filePath).parentFile
-        val siblings = state.localVideos.filter { java.io.File(it.filePath).parentFile == parent }
-        AlertDialog(
-            onDismissRequest = { browseParentTarget = null },
-            title = { Text(parent?.name ?: "Folder") },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                    siblings.forEach { sibling ->
-                        Text(
-                            text = sibling.name,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    browseParentTarget = null
-                                    onPlayVideo(sibling.filePath, sibling.name, false)
-                                }
-                                .padding(vertical = 10.dp)
-                        )
+        val siblings = state.localVideos
+            .filter { java.io.File(it.filePath).parentFile == parent }
+            .sortedBy { it.name.lowercase() }
+        ActionsBottomSheet(
+            title = parent?.name ?: "Folder",
+            onDismiss = { browseParentTarget = null }
+        ) {
+            if (siblings.isEmpty()) {
+                Text(
+                    "No other videos in this folder",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)
+                )
+            }
+            siblings.forEach { sibling ->
+                SheetAction(
+                    icon = Icons.Default.PlayArrow,
+                    label = sibling.name,
+                    onClick = {
+                        browseParentTarget = null
+                        onPlayVideo(sibling.filePath, sibling.name, false)
                     }
-                }
-            },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = { browseParentTarget = null }) { Text("Close") } }
-        )
+                )
+            }
+        }
     }
 
     // ---- Video group dialogs ----
@@ -603,7 +605,7 @@ fun VideoLibraryScreen(
                                     is LocalVideoDisplayItem.Single -> LocalVideoCard(
                                         video = item.video,
                                         showThumbnail = state.appSettings.videoThumbnailsEnabled,
-                                        isPlayed = item.isPlayed,
+                                        isPlayed = item.isPlayed && showSeenMarker,
                                         isFavorite = favoritePaths.contains(item.video.filePath),
                                         onClick = { onPlayVideo(item.video.filePath, item.video.name, false) },
                                         onLongClick = { menuVideo = item.video },
@@ -626,7 +628,7 @@ fun VideoLibraryScreen(
                                 is LocalVideoDisplayItem.Single -> LocalVideoCard(
                                     video = item.video,
                                     showThumbnail = state.appSettings.videoThumbnailsEnabled,
-                                    isPlayed = item.isPlayed,
+                                    isPlayed = item.isPlayed && showSeenMarker,
                                         isFavorite = favoritePaths.contains(item.video.filePath),
                                     onClick = { onPlayVideo(item.video.filePath, item.video.name, false) },
                                     onLongClick = { menuVideo = item.video },
@@ -969,6 +971,7 @@ fun LocalVideoCard(
     onMenuClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val ellipsize by com.dk.tvplayer.util.UiPrefs.titleEllipsize.collectAsState()
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -1030,9 +1033,9 @@ fun LocalVideoCard(
             Row(verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = video.name,
+                        text = com.dk.tvplayer.util.ellipsizeTitle(video.name, ellipsize),
                         style = MaterialTheme.typography.titleSmall,
-                        maxLines = 2,
+                        maxLines = if (ellipsize == com.dk.tvplayer.util.TitleEllipsize.DEFAULT) 2 else 1,
                         overflow = TextOverflow.Ellipsis,
                         color = if (isPlayed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
                     )
@@ -1427,6 +1430,7 @@ fun VideoGroupCard(
     onMenuClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val ellipsize by com.dk.tvplayer.util.UiPrefs.titleEllipsize.collectAsState()
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -1463,9 +1467,9 @@ fun VideoGroupCard(
             Row(verticalAlignment = Alignment.Top) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = group.displayName,
+                        text = com.dk.tvplayer.util.ellipsizeTitle(group.displayName, ellipsize),
                         style = MaterialTheme.typography.titleSmall,
-                        maxLines = 2,
+                        maxLines = if (ellipsize == com.dk.tvplayer.util.TitleEllipsize.DEFAULT) 2 else 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(4.dp))
