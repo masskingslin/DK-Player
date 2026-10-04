@@ -30,6 +30,11 @@ import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Card
@@ -77,7 +82,12 @@ fun SettingsScreen(
     onOpenDownloads: () -> Unit,
     onOpenRemoteAccess: (() -> Unit)? = null,
     onOpenAdvanced: (() -> Unit)? = null,
-    onOpenParentalControl: (() -> Unit)? = null
+    onOpenParentalControl: (() -> Unit)? = null,
+    onOpenInterface: (() -> Unit)? = null,
+    onOpenVideoSettings: (() -> Unit)? = null,
+    onOpenSubtitles: (() -> Unit)? = null,
+    onOpenAudio: (() -> Unit)? = null,
+    onOpenGeneral: (() -> Unit)? = null
 ) {
     val state by viewModel.uiState.collectAsState()
     val settings = state.appSettings
@@ -347,50 +357,6 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Text(text = "Subtitles", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Text Size", style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(8.dp))
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    SubtitleTextSize.entries.forEachIndexed { index, size ->
-                        SegmentedButton(
-                            selected = settings.subtitleTextSize == size,
-                            onClick = { viewModel.setSubtitleTextSize(size) },
-                            shape = SegmentedButtonDefaults.itemShape(index = index, count = SubtitleTextSize.entries.size)
-                        ) {
-                            Text(size.label, style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Text Color", style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SubtitleColorPreset.entries.forEach { preset ->
-                        val isSelected = settings.subtitleColor == preset
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(
-                                color = Color(preset.colorArgb),
-                                isSelected = isSelected,
-                                onClick = { viewModel.setSubtitleColor(preset) }
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(preset.label, style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
         Text(text = "Theme Customization", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -506,6 +472,161 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+        }
+
+        if (onOpenInterface != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenInterface),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Column(modifier = Modifier.padding(start = 16.dp)) {
+                        Text(text = "Interface", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            text = "Theme, language, list titles, sleep timer, incognito",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        if (onOpenVideoSettings != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenVideoSettings),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Movie,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Column(modifier = Modifier.padding(start = 16.dp)) {
+                        Text(text = "Video", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            text = "Fast seek, pop-up player, frame rate, resolution",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        if (onOpenSubtitles != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenSubtitles),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Subtitles,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Column(modifier = Modifier.padding(start = 16.dp)) {
+                        Text(text = "Subtitles", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            text = "Presets, language, encoding, font, background, shadow, outline",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        if (onOpenAudio != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenAudio),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Headphones,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Column(modifier = Modifier.padding(start = 16.dp)) {
+                        Text(text = "Audio", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            text = "Calls, headset, language, replay gain",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        if (onOpenGeneral != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenGeneral),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Column(modifier = Modifier.padding(start = 16.dp)) {
+                        Text(text = "General", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            text = "Media library, background mode, network, history, permissions",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
