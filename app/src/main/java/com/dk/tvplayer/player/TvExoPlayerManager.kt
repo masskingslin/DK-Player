@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.media3.cast.CastPlayer
 import androidx.media3.cast.SessionAvailabilityListener
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
@@ -20,6 +21,9 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioCapabilities
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
@@ -132,7 +136,27 @@ class TvExoPlayerManager(
 
     private val trackSelector = DefaultTrackSelector(context)
 
-    private val renderersFactory = DefaultRenderersFactory(context).apply {
+    private val renderersFactory = object : DefaultRenderersFactory(context) {
+        // "Digital audio output (passthrough)": off keeps everything as decoded PCM; on lets
+        // surround formats (AC-3/E-AC-3/DTS) go out untouched to an HDMI / Bluetooth receiver
+        // that supports them. Applied when the player is built, so it takes effect on restart.
+        override fun buildAudioSink(
+            context: Context,
+            enableFloatOutput: Boolean,
+            enableAudioTrackPlaybackParams: Boolean
+        ): AudioSink {
+            val capabilities = if (com.dk.tvplayer.util.PlaybackPrefs.digitalPassthrough.value) {
+                AudioCapabilities.getCapabilities(context)
+            } else {
+                AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES
+            }
+            return DefaultAudioSink.Builder(context)
+                .setAudioCapabilities(capabilities)
+                .setEnableFloatOutput(enableFloatOutput)
+                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                .build()
+        }
+    }.apply {
         // Hardware acceleration toggle: EXTENSION_RENDERER_MODE_OFF keeps decoding on
         // platform MediaCodec (hardware) decoders only; PREFER routes through software
         // extension decoders first when available. This is applied at player-creation
@@ -144,10 +168,28 @@ class TvExoPlayerManager(
                 DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
             }
         )
+        // "Full" hardware acceleration: queue buffers to MediaCodec asynchronously, which
+        // helps high-bitrate video drop fewer frames.
+        if (hwAccelerationEnabled &&
+            com.dk.tvplayer.util.PlaybackPrefs.hardwareAcceleration.value ==
+            com.dk.tvplayer.util.HardwareAcceleration.FULL
+        ) {
+            forceEnableMediaCodecAsynchronousQueueing()
+        }
     }
 
     val localPlayer: ExoPlayer = ExoPlayer.Builder(context, renderersFactory)
         .setTrackSelector(trackSelector)
+        // Audio focus: pause for calls and other apps' playback (see "Resume playback after a
+        // call"), and pause when headphones are unplugged ("Detect headset").
+        .setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(C.USAGE_MEDIA)
+                .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                .build(),
+            /* handleAudioFocus = */ true
+        )
+        .setHandleAudioBecomingNoisy(com.dk.tvplayer.util.PlaybackPrefs.detectHeadset.value)
         .apply {
             // "Network caching value" (Advanced settings): how much media to buffer before
             // starting / resuming after a stall. Applied at player-creation time, so a change
@@ -314,6 +356,14 @@ class TvExoPlayerManager(
     }
 
     private val androidAutoSessionCallback = object : MediaSession.Callback {
+        // "Ignore headset media button presses": swallow physical/headset button events (the
+        // notification and on-screen controls use controller commands and are unaffected).
+        override fun onMediaButtonEvent(
+            session: MediaSession,
+            controllerInfo: MediaSession.ControllerInfo,
+            intent: Intent
+        ): Boolean = com.dk.tvplayer.util.PlaybackPrefs.ignoreHeadsetButtons.value
+
         override fun onConnect(
             session: MediaSession,
             controller: MediaSession.ControllerInfo
@@ -379,8 +429,48 @@ class TvExoPlayerManager(
     private var sleepTimerJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Main)
 
+    private val replayGain = ReplayGain(localPlayer)
+    private var pausedByNoisy = false
+
     init {
         attachListener(localPlayer)
+        registerHeadsetCallback()
+    }
+
+    /** Re-reads the replay gain settings (call after one changes). */
+    fun refreshReplayGain() = replayGain.apply()
+
+    /** "Detect headset": pause automatically when headphones are unplugged. */
+    fun setDetectHeadset(enabled: Boolean) {
+        localPlayer.setHandleAudioBecomingNoisy(enabled)
+    }
+
+    fun setPreferredAudioLanguage(tag: String) {
+        trackSelector.parameters = trackSelector.parameters.buildUpon()
+            .setPreferredAudioLanguage(tag.ifBlank { null })
+            .build()
+    }
+
+    /** "Resume on headset insertion": plug headphones back in after they pulled the plug. */
+    private fun registerHeadsetCallback() {
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+        val headsetTypes = setOf(
+            android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+            android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+            android.media.AudioDeviceInfo.TYPE_USB_HEADSET,
+            26 // TYPE_BLE_HEADSET (API 31)
+        )
+        audioManager.registerAudioDeviceCallback(object : android.media.AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<out android.media.AudioDeviceInfo>) {
+                if (pausedByNoisy && com.dk.tvplayer.util.PlaybackPrefs.resumeOnHeadset.value &&
+                    addedDevices.any { it.isSink && it.type in headsetTypes }
+                ) {
+                    pausedByNoisy = false
+                    localPlayer.play()
+                }
+            }
+        }, android.os.Handler(android.os.Looper.getMainLooper()))
     }
 
     /** Invoked when the active item plays to its end — the ViewModel uses it to advance
@@ -407,6 +497,11 @@ class TvExoPlayerManager(
                 if (_activePlayer.value === player) {
                     _isBufferingFlow.value = playbackState == Player.STATE_BUFFERING
                     if (playbackState == Player.STATE_ENDED) onPlaybackEnded?.invoke()
+                    if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
+                        com.dk.tvplayer.util.LockscreenCover.scheduleRestore()
+                    } else {
+                        com.dk.tvplayer.util.LockscreenCover.cancelRestore()
+                    }
                     if (playbackState == Player.STATE_READY) {
                         _durationFlow.value = player.duration.coerceAtLeast(0L)
                         retryAttempt = 0
@@ -422,10 +517,36 @@ class TvExoPlayerManager(
                 }
             }
 
+            override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) {
+                // A call (or similar) took audio focus temporarily. By default playback resumes by
+                // itself afterwards; with "Resume playback after a call" off it stays paused.
+                if (player === localPlayer &&
+                    playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_TRANSIENT_AUDIO_FOCUS_LOSS &&
+                    !com.dk.tvplayer.util.PlaybackPrefs.resumeAfterCall.value
+                ) {
+                    localPlayer.pause()
+                }
+            }
+
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                if (player !== localPlayer) return
+                pausedByNoisy = !playWhenReady &&
+                    reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY
+            }
+
+            override fun onMetadata(metadata: androidx.media3.common.Metadata) {
+                if (player === localPlayer) replayGain.onMetadata(metadata)
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                if (player === localPlayer) replayGain.onNewItem()
+            }
+
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
                 if (_activePlayer.value === player) {
                     updateVideoFrameRate()
                 }
+                if (player === localPlayer) replayGain.onTracksChanged(tracks)
             }
         })
     }
@@ -480,12 +601,37 @@ class TvExoPlayerManager(
         val target = _activePlayer.value
         val metadataBuilder = MediaMetadata.Builder().setTitle(lastPlayedTitle ?: "")
         if (!subtitle.isNullOrBlank()) metadataBuilder.setSubtitle(subtitle)
+        // Hand embedded cover art (audio files) to the media session so the notification and
+        // lock screen media controls can show it.
+        if (url.startsWith("/") &&
+            url.substringAfterLast('.', "").lowercase() in setOf("mp3", "m4a", "flac", "ogg", "opus", "aac", "wav", "wma")
+        ) {
+            runCatching {
+                val retriever = android.media.MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(url)
+                    retriever.embeddedPicture?.let {
+                        metadataBuilder.setArtworkData(it, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+                    }
+                } finally {
+                    retriever.release()
+                }
+            }
+        }
         val mediaItemBuilder = MediaItem.Builder()
             .setUri(url)
             .setMediaMetadata(metadataBuilder.build())
         if (forceHlsMimeType) {
             mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
         }
+        // "Auto load subtitles": pick up Movie.srt / Movie.en.vtt etc. sitting next to a local video.
+        if (com.dk.tvplayer.util.SubtitlePrefs.autoLoad.value) {
+            val sidecars = com.dk.tvplayer.util.SidecarSubtitles.find(
+                context, url, com.dk.tvplayer.util.SubtitlePrefs.encoding.value
+            )
+            if (sidecars.isNotEmpty()) mediaItemBuilder.setSubtitleConfigurations(sidecars)
+        }
+        com.dk.tvplayer.util.LockscreenCover.update(url)
         val mediaItem = mediaItemBuilder.build()
 
         // Cast's generic Player interface has no notion of custom request headers, and
@@ -534,6 +680,13 @@ class TvExoPlayerManager(
     /** Title/URL of whatever was last started via [play] — used by remote access. */
     val currentMediaTitle: String? get() = lastPlayedTitle
     val currentMediaUrl: String? get() = lastPlayedUrl
+
+    /** Preferred subtitle language (BCP-47 tag); blank = no preference. */
+    fun setPreferredSubtitleLanguage(tag: String) {
+        trackSelector.parameters = trackSelector.parameters.buildUpon()
+            .setPreferredTextLanguage(tag.ifBlank { null })
+            .build()
+    }
 
     fun togglePlayPause() {
         val player = _activePlayer.value

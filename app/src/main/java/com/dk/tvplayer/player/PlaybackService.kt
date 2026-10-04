@@ -84,6 +84,13 @@ class PlaybackService : MediaSessionService() {
         // session the moment the app is swiped away. Casting keeps the service alive
         // too, whether or not the local player itself is running.
         val manager = (application as DkPlayerApplication).playerManager
+        // "Stop on application swipe": dismissing the app from Recents ends playback too.
+        if (com.dk.tvplayer.util.PlaybackPrefs.stopOnSwipe.value) {
+            runCatching { manager.exoPlayer.stop() }
+            stopSelf()
+            super.onTaskRemoved(rootIntent)
+            return
+        }
         if (!manager.exoPlayer.isPlaying && !manager.isCastingFlow.value) {
             stopSelf()
         }
