@@ -146,6 +146,13 @@ fun PhonePlayerScreen(
 ) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
+
+    // "Video screen orientation" (General settings).
+    val orientationMode by com.dk.tvplayer.util.PlaybackPrefs.videoOrientation.flow.collectAsState()
+    DisposableEffect(orientationMode, activity) {
+        activity?.requestedOrientation = orientationMode.androidValue
+        onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
+    }
     val audioManager = remember(context) {
         context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     }
@@ -197,6 +204,10 @@ fun PhonePlayerScreen(
         .collectAsState(initial = emptyList())
     // Kept so subtitle style (size/color) can be reapplied whenever the setting changes.
     var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
+    // True while the video is being shown on a secondary display ("Prefer clone" off) — this
+    // screen then must not grab the video surface back.
+    var presentationActive by remember { mutableStateOf(false) }
+    val preferClone by com.dk.tvplayer.util.UiPrefs.preferClone.collectAsState()
     // Video Fit / Zoom / Stretch / Fixed Width / Fixed Height — applied to PlayerView below.
     var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
 
@@ -207,7 +218,7 @@ fun PhonePlayerScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, activePlayer) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
+            if (event == Lifecycle.Event.ON_RESUME && !presentationActive) {
                 playerViewRef?.player = activePlayer
             }
         }
@@ -488,7 +499,7 @@ fun PhonePlayerScreen(
                 }
             },
             update = { playerView ->
-                playerView.player = activePlayer
+                if (!presentationActive) playerView.player = activePlayer
                 playerView.resizeMode = resizeMode
             },
             modifier = Modifier.fillMaxSize()
@@ -506,22 +517,87 @@ fun PhonePlayerScreen(
 
         // Applies the persisted subtitle size/color preference to the caption view
         // whenever the player view is (re)created or the settings change.
-        LaunchedEffect(playerViewRef, uiState.appSettings.subtitleTextSize, uiState.appSettings.subtitleColor) {
+        val subtitleStyle by com.dk.tvplayer.util.SubtitlePrefs.style.collectAsState()
+
+        // Text subtitles are drawn by StyledSubtitleText (outline thickness, outline + shadow);
+        // picture-based subtitles (PGS/DVB) can't be restyled, so those fall back to Media3's view.
+        var cueText by remember { mutableStateOf("") }
+        var hasBitmapCues by remember { mutableStateOf(false) }
+        DisposableEffect(activePlayer) {
+            val listener = object : Player.Listener {
+                override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
+                    hasBitmapCues = cueGroup.cues.any { it.bitmap != null }
+                    cueText = cueGroup.cues
+                        .filter { it.bitmap == null && !it.text.isNullOrEmpty() }
+                        .joinToString("\n") { it.text.toString() }
+                }
+            }
+            activePlayer.addListener(listener)
+            onDispose {
+                activePlayer.removeListener(listener)
+                cueText = ""
+                hasBitmapCues = false
+            }
+        }
+        LaunchedEffect(playerViewRef, subtitleStyle, hasBitmapCues) {
             val subtitleView = playerViewRef?.subtitleView ?: return@LaunchedEffect
-            subtitleView.setFixedTextSize(
-                android.util.TypedValue.COMPLEX_UNIT_SP,
-                uiState.appSettings.subtitleTextSize.sp
+            com.dk.tvplayer.util.applySubtitleStyle(subtitleView, subtitleStyle)
+            subtitleView.alpha = if (hasBitmapCues) 1f else 0f
+        }
+        if (cueText.isNotBlank() && !hasBitmapCues) {
+            com.dk.tvplayer.ui.components.StyledSubtitleText(
+                text = cueText,
+                style = subtitleStyle,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = if (showControls) 120.dp else 36.dp)
             )
-            subtitleView.setStyle(
-                androidx.media3.ui.CaptionStyleCompat(
-                    uiState.appSettings.subtitleColor.colorArgb,
-                    android.graphics.Color.TRANSPARENT,
-                    android.graphics.Color.TRANSPARENT,
-                    androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE,
-                    android.graphics.Color.BLACK,
-                    null
-                )
-            )
+        }
+
+        // "Prefer clone" off: when a secondary display (HDMI / Chromecast screen) is connected,
+        // show the video there and keep this phone screen as the remote control.
+        DisposableEffect(activePlayer, preferClone, playerViewRef) {
+            val displayManager = context.getSystemService(Context.DISPLAY_SERVICE)
+                as android.hardware.display.DisplayManager
+            var presentation: com.dk.tvplayer.ui.player.VideoPresentation? = null
+
+            fun stopPresentation() {
+                if (presentation != null) {
+                    runCatching { presentation?.dismiss() }
+                    presentation = null
+                    presentationActive = false
+                    playerViewRef?.player = null
+                    playerViewRef?.player = activePlayer
+                }
+            }
+
+            fun refresh() {
+                val external = displayManager
+                    .getDisplays(android.hardware.display.DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
+                    .firstOrNull()
+                if (!preferClone && external != null) {
+                    if (presentation == null) {
+                        presentationActive = true
+                        presentation = com.dk.tvplayer.ui.player.VideoPresentation(context, external, activePlayer)
+                            .also { runCatching { it.show() } }
+                    }
+                } else {
+                    stopPresentation()
+                }
+            }
+
+            val listener = object : android.hardware.display.DisplayManager.DisplayListener {
+                override fun onDisplayAdded(displayId: Int) = refresh()
+                override fun onDisplayRemoved(displayId: Int) = refresh()
+                override fun onDisplayChanged(displayId: Int) {}
+            }
+            displayManager.registerDisplayListener(listener, null)
+            refresh()
+            onDispose {
+                displayManager.unregisterDisplayListener(listener)
+                stopPresentation()
+            }
         }
 
         // Brightness HUD pill (left edge)
@@ -878,7 +954,10 @@ fun PhonePlayerScreen(
                                     leadingIcon = { MenuIcon(Icons.Default.PictureInPictureAlt) },
                                     onClick = {
                                         showMoreMenu = false
-                                        if (Settings.canDrawOverlays(context)) {
+                                        if (!com.dk.tvplayer.util.UiPrefs.useCustomPipPopup.value) {
+                                            // System Picture-in-Picture instead of the custom overlay.
+                                            (activity as? com.dk.tvplayer.MainActivity)?.enterPip()
+                                        } else if (Settings.canDrawOverlays(context)) {
                                             context.startService(Intent(context, FloatingPlayerService::class.java))
                                             // The overlay now owns the video surface; sending
                                             // this Activity to the background (rather than
