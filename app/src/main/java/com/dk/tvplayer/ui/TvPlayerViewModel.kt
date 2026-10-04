@@ -318,6 +318,10 @@ class TvPlayerViewModel(
     private var firstVideoLoad = true
     private var firstAudioLoad = true
 
+    private val _mediaFolders = MutableStateFlow<List<Pair<String, Int>>>(emptyList())
+    /** Folders that contain videos or audio, with item counts (for "Media library folders"). */
+    val mediaFolders: StateFlow<List<Pair<String, Int>>> = _mediaFolders.asStateFlow()
+
     /** Set once the "resume last played" tip has been offered in this app session. */
     var resumeTipShown = false
 
@@ -558,23 +562,6 @@ class TvPlayerViewModel(
             )
         }
     }
-
-    private fun publishLocalMedia() {
-        _mediaFolders.value = (rawLocalVideos.map { it.filePath } + rawLocalAudio.map { it.filePath })
-            .mapNotNull { java.io.File(it).parent }
-            .groupingBy { it }.eachCount()
-            .toList().sortedBy { it.first.lowercase() }
-        _uiState.update {
-            it.copy(
-                localVideos = rawLocalVideos.filterNot { v -> isExcluded(v.filePath) },
-                localAudio = rawLocalAudio.filterNot { a -> isExcluded(a.filePath) }
-            )
-        }
-    }
-
-    private val _mediaFolders = MutableStateFlow<List<Pair<String, Int>>>(emptyList())
-    /** Folders that contain videos or audio, with item counts (for "Media library folders"). */
-    val mediaFolders: StateFlow<List<Pair<String, Int>>> = _mediaFolders.asStateFlow()
 
     /**
      * Scans the device for videos. With "Auto rescan" off, the very first load after app start
