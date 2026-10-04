@@ -10,6 +10,7 @@ import com.dk.tvplayer.data.backup.SettingsBackupManager
 import com.dk.tvplayer.data.local.AppLanguage
 import com.dk.tvplayer.data.local.BookmarkEntity
 import com.dk.tvplayer.data.local.AppThemeMode
+import com.dk.tvplayer.data.local.LocalAudioItem
 import com.dk.tvplayer.data.local.LocalVideoItem
 import com.dk.tvplayer.data.local.PlaylistEntity
 import com.dk.tvplayer.data.local.PlaylistItemEntity
@@ -35,6 +36,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -134,7 +136,7 @@ class TvPlayerViewModel(
                 playerManager.setPlaybackSpeed(settings.defaultPlaybackSpeed)
                 playerManager.setFastSeekEnabled(settings.fastSeekEnabled)
                 playerManager.setMaxVideoResolution(settings.maxVideoResolution.width, settings.maxVideoResolution.height)
-                playerManager.setBackgroundPlaybackEnabled(settings.backgroundAudioPlayback)
+                playerManager.setBackgroundPlaybackEnabled(effectiveBackgroundPlayback(settings.backgroundAudioPlayback))
                 playerManager.setCastAudioOnly(settings.castAudioOnly)
                 playerManager.setWirelessCastingEnabled(settings.wirelessCastingEnabled)
                 playerManager.setDefaultPlaybackSpeedSetting(settings.defaultPlaybackSpeed)
@@ -144,7 +146,9 @@ class TvPlayerViewModel(
                 playerManager.setAndroidAutoQueueFormat(settings.androidAutoQueueFormat)
                 playerManager.setAndroidAutoUseGlobalPlaybackSpeed(settings.androidAutoUseGlobalPlaybackSpeed)
                 playerManager.setAndroidAutoPlaybackSpeedControlEnabled(settings.androidAutoPlaybackSpeedControlEnabled)
-                playerManager.setAndroidAutoSeekButtonsEnabled(settings.androidAutoSeekButtonsEnabled)
+                playerManager.setAndroidAutoSeekButtonsEnabled(
+                    settings.androidAutoSeekButtonsEnabled || com.dk.tvplayer.util.UiPrefs.seekButtonsInNotification.value
+                )
                 applyLocaleIfNeeded(settings.appLanguage)
             }
         }
@@ -309,8 +313,82 @@ class TvPlayerViewModel(
     /** (filePath, title) requested from outside the app UI, e.g. a launcher shortcut. */
     val externalPlayRequest = MutableStateFlow<Pair<String, String>?>(null)
 
+    private var rawLocalVideos: List<LocalVideoItem> = emptyList()
+    private var rawLocalAudio: List<LocalAudioItem> = emptyList()
+    private var firstVideoLoad = true
+    private var firstAudioLoad = true
+
+    /** Set once the "resume last played" tip has been offered in this app session. */
+    var resumeTipShown = false
+
+    private val _appForegrounded = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    /** Emits each time the activity becomes visible again (used to restore video from background). */
+    val appForegrounded: SharedFlow<Unit> = _appForegrounded.asSharedFlow()
+
+    /** Combines the old "Background Audio Playback" switch with the Background/PiP mode choice. */
+    fun effectiveBackgroundPlayback(legacySetting: Boolean): Boolean =
+        when (com.dk.tvplayer.util.PlaybackPrefs.backgroundMode.value) {
+            com.dk.tvplayer.util.BackgroundMode.STOP -> false
+            com.dk.tvplayer.util.BackgroundMode.BACKGROUND -> true
+            com.dk.tvplayer.util.BackgroundMode.PIP -> legacySetting
+        }
+
+    fun refreshBackgroundPlayback() {
+        playerManager.setBackgroundPlaybackEnabled(
+            effectiveBackgroundPlayback(_uiState.value.appSettings.backgroundAudioPlayback)
+        )
+    }
+
+    fun notifyAppForegrounded() {
+        _appForegrounded.tryEmit(Unit)
+    }
+
     init {
-        playerManager.onPlaybackEnded = { _playbackEnded.tryEmit(Unit) }
+        playerManager.onPlaybackEnded = {
+            _playbackEnded.tryEmit(Unit)
+            // "Show seen video marker": a local video played to the end counts as seen.
+            val path = playerManager.currentMediaUrl
+            val state = _uiState.value
+            if (com.dk.tvplayer.util.UiPrefs.showSeenMarker.value &&
+                !state.appSettings.incognitoMode &&
+                path != null && state.localVideos.any { it.filePath == path }
+            ) {
+                viewModelScope.launch { repository.setVideoPlayed(path, true) }
+            }
+        }
+
+        // Non-persistent incognito: start every app launch with it switched off.
+        viewModelScope.launch {
+            if (!com.dk.tvplayer.util.UiPrefs.persistentIncognito.value &&
+                settingsDataStore.settingsFlow.first().incognitoMode
+            ) {
+                settingsDataStore.setIncognitoMode(false)
+            }
+        }
+
+        // Media library folders: re-filter the lists whenever the selection changes.
+        viewModelScope.launch {
+            com.dk.tvplayer.util.PlaybackPrefs.excludedFolders.flow.collect { publishLocalMedia() }
+        }
+
+        // Preferred audio language (Audio settings) → track selection.
+        viewModelScope.launch {
+            com.dk.tvplayer.util.PlaybackPrefs.preferredAudioLanguage.flow.collect {
+                playerManager.setPreferredAudioLanguage(it)
+            }
+        }
+
+        // Detect headset / replay gain settings → live player.
+        viewModelScope.launch {
+            com.dk.tvplayer.util.PlaybackPrefs.detectHeadset.flow.collect { playerManager.setDetectHeadset(it) }
+        }
+
+        restoreSavedQueue()
+
+        // Preferred subtitle language (Subtitles settings) → track selection.
+        viewModelScope.launch {
+            com.dk.tvplayer.util.SubtitlePrefs.language.collect { playerManager.setPreferredSubtitleLanguage(it) }
+        }
     }
 
     fun requestPlayFromStart(url: String) {
@@ -322,27 +400,51 @@ class TvPlayerViewModel(
         upcomingQueue.clear()
         videos.forEach { upcomingQueue.addLast(it.filePath to it.name) }
         _queueSize.value = upcomingQueue.size
+        persistQueue()
     }
 
     fun enqueue(video: LocalVideoItem) {
         upcomingQueue.addLast(video.filePath to video.name)
         _queueSize.value = upcomingQueue.size
+        persistQueue()
     }
 
     fun enqueueAll(videos: List<LocalVideoItem>) {
         videos.forEach { upcomingQueue.addLast(it.filePath to it.name) }
         _queueSize.value = upcomingQueue.size
+        persistQueue()
     }
 
     /** "Insert next": plays right after whatever is playing now. */
     fun enqueueNext(video: LocalVideoItem) {
         upcomingQueue.addFirst(video.filePath to video.name)
         _queueSize.value = upcomingQueue.size
+        persistQueue()
+    }
+
+    // ---- Play-queue history ("Video/Audio play queue history" in Settings) ----
+
+    private fun persistQueue() {
+        val keepVideo = com.dk.tvplayer.util.PlaybackPrefs.savePlaybackHistory.value &&
+            com.dk.tvplayer.util.PlaybackPrefs.videoQueueHistory.value
+        val keepAudio = com.dk.tvplayer.util.PlaybackPrefs.savePlaybackHistory.value &&
+            com.dk.tvplayer.util.PlaybackPrefs.audioQueueHistory.value
+        val keep = upcomingQueue.filter { (path, _) ->
+            if (path.substringAfterLast('.', "").lowercase() in AUDIO_EXTENSIONS) keepAudio else keepVideo
+        }
+        com.dk.tvplayer.util.MediaListCache.saveQueue(keep)
+    }
+
+    private fun restoreSavedQueue() {
+        val saved = com.dk.tvplayer.util.MediaListCache.loadQueue()
+        saved.forEach { upcomingQueue.addLast(it) }
+        _queueSize.value = upcomingQueue.size
     }
 
     fun popNextQueued(): Pair<String, String>? {
         val next = upcomingQueue.removeFirstOrNull()
         _queueSize.value = upcomingQueue.size
+        persistQueue()
         return next
     }
 
@@ -366,7 +468,14 @@ class TvPlayerViewModel(
                 val savedPosition = entry?.lastPositionMs ?: 0L
                 val savedDuration = entry?.durationMs ?: 0L
                 val nearEnd = savedDuration > 0 && savedPosition >= savedDuration - 5_000
-                if (savedPosition > 5_000 && !nearEnd) savedPosition else 0L
+                // "Resume played audio": audio files can be set to always, only long ones, or never resume.
+                val isAudio = url.substringAfterLast('.', "").lowercase() in AUDIO_EXTENSIONS
+                val audioAllows = !isAudio || when (com.dk.tvplayer.util.PlaybackPrefs.resumeAudio.value) {
+                    com.dk.tvplayer.util.ResumeAudio.ALWAYS -> true
+                    com.dk.tvplayer.util.ResumeAudio.LONG -> savedDuration >= 10 * 60_000L
+                    com.dk.tvplayer.util.ResumeAudio.NEVER -> false
+                }
+                if (audioAllows && savedPosition > 5_000 && !nearEnd) savedPosition else 0L
             } else {
                 0L
             }
@@ -400,7 +509,7 @@ class TvPlayerViewModel(
 
     /** No-op in Incognito Mode — nothing gets written to playback history. */
     fun savePlaybackProgress(url: String, title: String, position: Long, duration: Long) {
-        if (_uiState.value.appSettings.incognitoMode) return
+        if (_uiState.value.appSettings.incognitoMode || !com.dk.tvplayer.util.PlaybackPrefs.savePlaybackHistory.value) return
         viewModelScope.launch {
             repository.saveHistory(url, title, position, duration)
         }
@@ -430,10 +539,56 @@ class TvPlayerViewModel(
 
     // ---- Local media ----
 
-    fun refreshLocalVideos() {
+    private fun isExcluded(path: String): Boolean {
+        val excluded = com.dk.tvplayer.util.PlaybackPrefs.excludedFolders.value
+        if (excluded.isEmpty()) return false
+        val parent = java.io.File(path).parent ?: return false
+        return excluded.any { parent == it || parent.startsWith("$it/") }
+    }
+
+    private fun publishLocalMedia() {
+        _mediaFolders.value = (rawLocalVideos.map { it.filePath } + rawLocalAudio.map { it.filePath })
+            .mapNotNull { java.io.File(it).parent }
+            .groupingBy { it }.eachCount()
+            .toList().sortedBy { it.first.lowercase() }
+        _uiState.update {
+            it.copy(
+                localVideos = rawLocalVideos.filterNot { v -> isExcluded(v.filePath) },
+                localAudio = rawLocalAudio.filterNot { a -> isExcluded(a.filePath) }
+            )
+        }
+    }
+
+    private fun publishLocalMedia() {
+        _mediaFolders.value = (rawLocalVideos.map { it.filePath } + rawLocalAudio.map { it.filePath })
+            .mapNotNull { java.io.File(it).parent }
+            .groupingBy { it }.eachCount()
+            .toList().sortedBy { it.first.lowercase() }
+        _uiState.update {
+            it.copy(
+                localVideos = rawLocalVideos.filterNot { v -> isExcluded(v.filePath) },
+                localAudio = rawLocalAudio.filterNot { a -> isExcluded(a.filePath) }
+            )
+        }
+    }
+
+    private val _mediaFolders = MutableStateFlow<List<Pair<String, Int>>>(emptyList())
+    /** Folders that contain videos or audio, with item counts (for "Media library folders"). */
+    val mediaFolders: StateFlow<List<Pair<String, Int>>> = _mediaFolders.asStateFlow()
+
+    /**
+     * Scans the device for videos. With "Auto rescan" off, the very first load after app start
+     * reuses the list saved by the last scan instead; [manual] always rescans.
+     */
+    fun refreshLocalVideos(manual: Boolean = false) {
         viewModelScope.launch {
-            val videos = repository.scanLocalVideos()
-            _uiState.update { it.copy(localVideos = videos) }
+            val useCache = firstVideoLoad && !manual && !com.dk.tvplayer.util.PlaybackPrefs.autoRescan.value
+            firstVideoLoad = false
+            val cached = if (useCache) com.dk.tvplayer.util.MediaListCache.loadVideos() else null
+            rawLocalVideos = cached ?: repository.scanLocalVideos().also {
+                com.dk.tvplayer.util.MediaListCache.saveVideos(it)
+            }
+            publishLocalMedia()
         }
     }
 
@@ -477,11 +632,22 @@ class TvPlayerViewModel(
         viewModelScope.launch { repository.removeFileFromGroup(video.filePath) }
     }
 
-    fun refreshLocalAudio() {
+    fun refreshLocalAudio(manual: Boolean = false) {
         viewModelScope.launch {
-            val audio = repository.scanLocalAudio()
-            _uiState.update { it.copy(localAudio = audio) }
+            val useCache = firstAudioLoad && !manual && !com.dk.tvplayer.util.PlaybackPrefs.autoRescan.value
+            firstAudioLoad = false
+            val cached = if (useCache) com.dk.tvplayer.util.MediaListCache.loadAudio() else null
+            rawLocalAudio = cached ?: repository.scanLocalAudio().also {
+                com.dk.tvplayer.util.MediaListCache.saveAudio(it)
+            }
+            publishLocalMedia()
         }
+    }
+
+    /** Rescans both video and audio right now (Settings → Media library). */
+    fun rescanMediaLibrary() {
+        refreshLocalVideos(manual = true)
+        refreshLocalAudio(manual = true)
     }
 
     fun importM3u(inputStream: InputStream) {
@@ -893,3 +1059,5 @@ class TvPlayerViewModel(
         // Do NOT release it here.
     }
 }
+
+private val AUDIO_EXTENSIONS = setOf("mp3", "m4a", "flac", "ogg", "opus", "aac", "wav", "wma")

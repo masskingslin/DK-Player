@@ -44,7 +44,14 @@ import com.dk.tvplayer.ui.parental.PinPromptHost
 import com.dk.tvplayer.ui.parental.SettingsPinGate
 import com.dk.tvplayer.ui.advanced.DebugLogsScreen
 import com.dk.tvplayer.ui.remote.RemoteAccessScreen
+import com.dk.tvplayer.ui.settings.AudioSettingsScreen
+import com.dk.tvplayer.ui.settings.GeneralSettingsScreen
+import com.dk.tvplayer.ui.settings.InterfaceSettingsScreen
+import com.dk.tvplayer.ui.settings.MediaFoldersScreen
+import com.dk.tvplayer.ui.settings.PermissionsScreen
 import com.dk.tvplayer.ui.settings.SettingsScreen
+import com.dk.tvplayer.ui.settings.SubtitlesSettingsScreen
+import com.dk.tvplayer.ui.settings.VideoSettingsScreen
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -78,14 +85,71 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
         currentRoute == "remote_access" ||
         currentRoute == "advanced" ||
         currentRoute == "parental_control" ||
+        currentRoute == "pref_interface" ||
+        currentRoute == "pref_video" ||
+        currentRoute == "pref_subtitles" ||
+        currentRoute == "pref_audio" ||
+        currentRoute == "pref_general" ||
+        currentRoute == "pref_folders" ||
+        currentRoute == "pref_permissions" ||
         currentRoute == "debug_logs" ||
         currentRoute?.startsWith("playlist_detail") == true
 
-    fun navigateToPlayer(url: String, title: String, isLive: Boolean = false) {
+    fun startPlayer(url: String, title: String, isLive: Boolean = false) {
         val encodedUrl = URLEncoder.encode(url, StandardCharsets.UTF_8.toString())
         val encodedTitle = URLEncoder.encode(title, StandardCharsets.UTF_8.toString())
         navController.navigate("player/$encodedUrl/$encodedTitle/$isLive")
     }
+
+    // "Action for streams when the connection is metered": warn or refuse before streaming over
+    // mobile data. Local files and finished downloads are never affected.
+    var meteredPrompt by remember { mutableStateOf<Triple<String, String, Boolean>?>(null) }
+    val appContext = androidx.compose.ui.platform.LocalContext.current
+
+    fun navigateToPlayer(url: String, title: String, isLive: Boolean = false) {
+        val action = com.dk.tvplayer.util.PlaybackPrefs.meteredAction.value
+        val isRemote = url.startsWith("http://") || url.startsWith("https://")
+        if (action != com.dk.tvplayer.util.MeteredAction.NOTHING && isRemote) {
+            val metered = (appContext.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+                as android.net.ConnectivityManager).isActiveNetworkMetered
+            val downloaded = (appContext.applicationContext as com.dk.tvplayer.DkPlayerApplication)
+                .downloadManagerHolder.downloadTracker.isDownloaded(url)
+            if (metered && !downloaded) {
+                when (action) {
+                    com.dk.tvplayer.util.MeteredAction.BLOCK -> android.widget.Toast.makeText(
+                        appContext, "Streaming is blocked on a metered connection", android.widget.Toast.LENGTH_LONG
+                    ).show()
+                    else -> meteredPrompt = Triple(url, title, isLive)
+                }
+                return
+            }
+        }
+        startPlayer(url, title, isLive)
+    }
+
+    meteredPrompt?.let { (url, title, isLive) ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { meteredPrompt = null },
+            title = { androidx.compose.material3.Text("Metered connection") },
+            text = {
+                androidx.compose.material3.Text(
+                    "You're on a metered connection (such as mobile data). Streaming may use a lot of data."
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    meteredPrompt = null
+                    startPlayer(url, title, isLive)
+                }) { androidx.compose.material3.Text("Play anyway") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { meteredPrompt = null }) {
+                    androidx.compose.material3.Text("Cancel")
+                }
+            }
+        )
+    }
+
 
     // Play-queue advance: when the current item ends while the player screen is up,
     // swap it for the next queued one (replacing the player route so Back still exits).
@@ -99,6 +163,21 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
                 navController.navigate("player/$encodedUrl/$encodedTitle/false") {
                     popUpTo("player/{mediaUrl}/{title}/{isLive}") { inclusive = true }
                 }
+            }
+        }
+    }
+
+    // "Restore video from background": coming back to the app while a video is still playing
+    // (background playback) reopens the player instead of the list you left.
+    LaunchedEffect(Unit) {
+        viewModel.appForegrounded.collect {
+            if (!com.dk.tvplayer.util.UiPrefs.restoreVideoFromBackground.value) return@collect
+            if (latestRoute?.startsWith("player") == true) return@collect
+            if (com.dk.tvplayer.FloatingPlayerState.isActive) return@collect
+            val pm = viewModel.playerManager
+            val url = pm.currentMediaUrl ?: return@collect
+            if (pm.isPlayingFlow.value && !pm.audioOnlyModeEnabledFlow.value) {
+                navigateToPlayer(url, pm.currentMediaTitle ?: url.substringAfterLast('/'), false)
             }
         }
     }
@@ -195,7 +274,12 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
                         onOpenDownloads = { navController.navigate("downloads") },
                         onOpenRemoteAccess = { navController.navigate("remote_access") },
                         onOpenAdvanced = { navController.navigate("advanced") },
-                        onOpenParentalControl = { navController.navigate("parental_control") }
+                        onOpenParentalControl = { navController.navigate("parental_control") },
+                        onOpenInterface = { navController.navigate("pref_interface") },
+                        onOpenVideoSettings = { navController.navigate("pref_video") },
+                        onOpenSubtitles = { navController.navigate("pref_subtitles") },
+                        onOpenAudio = { navController.navigate("pref_audio") },
+                        onOpenGeneral = { navController.navigate("pref_general") }
                     )
                 } else {
                     SettingsPinGate(onUnlocked = {
@@ -203,6 +287,39 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
                         unlocked = true
                     })
                 }
+            }
+
+            composable("pref_interface") {
+                InterfaceSettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+            }
+
+            composable("pref_video") {
+                VideoSettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+            }
+
+            composable("pref_audio") {
+                AudioSettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+            }
+
+            composable("pref_general") {
+                GeneralSettingsScreen(
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                    onOpenFolders = { navController.navigate("pref_folders") },
+                    onOpenPermissions = { navController.navigate("pref_permissions") }
+                )
+            }
+
+            composable("pref_folders") {
+                MediaFoldersScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+            }
+
+            composable("pref_permissions") {
+                PermissionsScreen(onBack = { navController.popBackStack() })
+            }
+
+            composable("pref_subtitles") {
+                SubtitlesSettingsScreen(onBack = { navController.popBackStack() })
             }
 
             composable("parental_control") {
