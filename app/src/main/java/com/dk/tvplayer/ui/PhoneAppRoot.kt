@@ -44,7 +44,10 @@ import com.dk.tvplayer.ui.parental.PinPromptHost
 import com.dk.tvplayer.ui.parental.SettingsPinGate
 import com.dk.tvplayer.ui.advanced.DebugLogsScreen
 import com.dk.tvplayer.ui.remote.RemoteAccessScreen
+import com.dk.tvplayer.ui.settings.AndroidAutoSettingsScreen
 import com.dk.tvplayer.ui.settings.AudioSettingsScreen
+import com.dk.tvplayer.ui.settings.CastingSettingsScreen
+import com.dk.tvplayer.ui.settings.EqualizerScreen
 import com.dk.tvplayer.ui.settings.GeneralSettingsScreen
 import com.dk.tvplayer.ui.settings.InterfaceSettingsScreen
 import com.dk.tvplayer.ui.settings.MediaFoldersScreen
@@ -89,6 +92,9 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
         currentRoute == "pref_video" ||
         currentRoute == "pref_subtitles" ||
         currentRoute == "pref_audio" ||
+        currentRoute == "pref_equalizer" ||
+        currentRoute == "pref_casting" ||
+        currentRoute == "pref_android_auto" ||
         currentRoute == "pref_general" ||
         currentRoute == "pref_folders" ||
         currentRoute == "pref_permissions" ||
@@ -279,6 +285,9 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
                         onOpenVideoSettings = { navController.navigate("pref_video") },
                         onOpenSubtitles = { navController.navigate("pref_subtitles") },
                         onOpenAudio = { navController.navigate("pref_audio") },
+                        onOpenEqualizer = { navController.navigate("pref_equalizer") },
+                        onOpenCasting = { navController.navigate("pref_casting") },
+                        onOpenAndroidAuto = { navController.navigate("pref_android_auto") },
                         onOpenGeneral = { navController.navigate("pref_general") }
                     )
                 } else {
@@ -295,6 +304,18 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
 
             composable("pref_video") {
                 VideoSettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+            }
+
+            composable("pref_equalizer") {
+                EqualizerScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+            }
+
+            composable("pref_casting") {
+                CastingSettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+            }
+
+            composable("pref_android_auto") {
+                AndroidAutoSettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
             }
 
             composable("pref_audio") {
