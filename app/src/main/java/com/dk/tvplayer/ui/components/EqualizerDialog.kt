@@ -80,6 +80,7 @@ fun EqualizerDialog(
 ) {
     val settings by EqualizerStore.state.collectAsState()
     val custom by EqualizerStore.customPresets.collectAsState()
+    val hidden by EqualizerStore.hiddenPresets.collectAsState()
     var showList by remember { mutableStateOf(false) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
@@ -150,7 +151,7 @@ fun EqualizerDialog(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                     ) {
-                        items(presets, key = { it.id }) { preset ->
+                        items(presets.filter { it.id !in hidden || it.id == settings.presetId }, key = { it.id }) { preset ->
                             FilterChip(
                                 selected = preset.id == settings.presetId,
                                 onClick = { pick(preset) },
@@ -322,7 +323,7 @@ private fun PresetListRow(preset: EqPreset, selected: Boolean, onClick: () -> Un
 
 /** Small filled step chart of a preset's 10 bands, like the thumbnails in VLC's list. */
 @Composable
-private fun CurveThumbnail(bandsDb: List<Float>, modifier: Modifier = Modifier) {
+internal fun CurveThumbnail(bandsDb: List<Float>, modifier: Modifier = Modifier) {
     val fill = MaterialTheme.colorScheme.onSurfaceVariant
     val back = MaterialTheme.colorScheme.surfaceVariant
     Canvas(modifier = modifier.clip(RoundedCornerShape(6.dp))) {
