@@ -35,6 +35,11 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Card
@@ -87,7 +92,10 @@ fun SettingsScreen(
     onOpenVideoSettings: (() -> Unit)? = null,
     onOpenSubtitles: (() -> Unit)? = null,
     onOpenAudio: (() -> Unit)? = null,
-    onOpenGeneral: (() -> Unit)? = null
+    onOpenGeneral: (() -> Unit)? = null,
+    onOpenEqualizer: (() -> Unit)? = null,
+    onOpenCasting: (() -> Unit)? = null,
+    onOpenAndroidAuto: (() -> Unit)? = null
 ) {
     val state by viewModel.uiState.collectAsState()
     val settings = state.appSettings
@@ -114,6 +122,22 @@ fun SettingsScreen(
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
+        // VLC-style list of the dedicated settings pages.
+        Text(text = "Extra settings", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        onOpenGeneral?.let { ExtraSettingsRow(Icons.Default.Settings, "General", "Media library, network, history, permissions", it) }
+        onOpenInterface?.let { ExtraSettingsRow(Icons.Default.Palette, "Interface", null, it) }
+        onOpenVideoSettings?.let { ExtraSettingsRow(Icons.Default.Movie, "Video", null, it) }
+        onOpenSubtitles?.let { ExtraSettingsRow(Icons.Default.Subtitles, "Subtitles", null, it) }
+        onOpenAudio?.let { ExtraSettingsRow(Icons.Default.MusicNote, "Audio", null, it) }
+        onOpenEqualizer?.let { ExtraSettingsRow(Icons.Default.Tune, "Equalizer", null, it) }
+        onOpenCasting?.let { ExtraSettingsRow(Icons.Default.Cast, "Casting", null, it) }
+        onOpenParentalControl?.let { ExtraSettingsRow(Icons.Default.VerifiedUser, "Parental control", null, it) }
+        onOpenRemoteAccess?.let { ExtraSettingsRow(Icons.Default.Wifi, "Remote access", null, it) }
+        onOpenAndroidAuto?.let { ExtraSettingsRow(Icons.Default.DirectionsCar, "Android Auto", null, it) }
+        onOpenAdvanced?.let { ExtraSettingsRow(Icons.Default.Build, "Advanced", null, it) }
+        Spacer(modifier = Modifier.height(24.dp))
+
         Text(text = "Player Configuration", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -228,129 +252,6 @@ fun SettingsScreen(
                     subtitle = "Don't save watch history or resume positions for this session",
                     checked = settings.incognitoMode,
                     onCheckedChange = { viewModel.setIncognitoMode(it) }
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(text = "Casting", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                SettingToggleItem(
-                    title = "Wireless Casting",
-                    subtitle = "Show the cast button and allow casting to Chromecast devices",
-                    checked = settings.wirelessCastingEnabled,
-                    onCheckedChange = { viewModel.setWirelessCastingEnabled(it) }
-                )
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-                SettingToggleItem(
-                    title = "Audio Only",
-                    subtitle = "Cast only audio, no video",
-                    checked = settings.castAudioOnly,
-                    enabled = settings.wirelessCastingEnabled,
-                    onCheckedChange = { viewModel.setCastAudioOnly(it) }
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    "Note: unlike VLC's own renderer, standard Chromecast can't transcode " +
-                        "video away locally — \"Audio Only\" tells the TV to show an audio-style " +
-                        "screen, but doesn't reduce the data actually sent.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(text = "Android Auto", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "Interface",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text("Title text size", style = MaterialTheme.typography.titleMedium)
-                Slider(
-                    value = settings.androidAutoTitleTextScale,
-                    onValueChange = { viewModel.setAndroidAutoTitleTextScale(it) },
-                    valueRange = 0.8f..1.4f,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Subtitle text size", style = MaterialTheme.typography.titleMedium)
-                Slider(
-                    value = settings.androidAutoSubtitleTextScale,
-                    onValueChange = { viewModel.setAndroidAutoSubtitleTextScale(it) },
-                    valueRange = 0.8f..1.4f,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-                SettingSelectItem(
-                    title = "Queue information",
-                    selected = settings.androidAutoQueueInfoPosition,
-                    options = QueueInfoPosition.entries,
-                    optionLabel = { it.label },
-                    onSelect = { viewModel.setAndroidAutoQueueInfoPosition(it) }
-                )
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-                SettingSelectItem(
-                    title = "Queue format",
-                    selected = settings.androidAutoQueueFormat,
-                    options = QueueFormat.entries,
-                    optionLabel = { it.label },
-                    onSelect = { viewModel.setAndroidAutoQueueFormat(it) }
-                )
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
-
-                Text(
-                    text = "Controls",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                SettingToggleItem(
-                    title = "Use the global playback speed",
-                    subtitle = "Use the playback speed set globally for all the tracks. " +
-                        "Individual tracks' playback speed will be ignored.",
-                    checked = settings.androidAutoUseGlobalPlaybackSpeed,
-                    onCheckedChange = { viewModel.setAndroidAutoUseGlobalPlaybackSpeed(it) }
-                )
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-                SettingToggleItem(
-                    title = "Android Auto playback speed",
-                    subtitle = "Show speed control in the overflow menu",
-                    checked = settings.androidAutoPlaybackSpeedControlEnabled,
-                    onCheckedChange = { viewModel.setAndroidAutoPlaybackSpeedControlEnabled(it) }
-                )
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
-
-                SettingToggleItem(
-                    title = "Android Auto seek buttons",
-                    subtitle = "Show rewind and fast forward in the overflow menu. Try holding " +
-                        "steering wheel previous and next buttons before enabling.",
-                    checked = settings.androidAutoSeekButtonsEnabled,
-                    onCheckedChange = { viewModel.setAndroidAutoSeekButtonsEnabled(it) }
                 )
             }
         }
@@ -472,254 +373,6 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
-            }
-        }
-
-        if (onOpenInterface != null) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onOpenInterface),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Tune,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Column(modifier = Modifier.padding(start = 16.dp)) {
-                        Text(text = "Interface", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            text = "Theme, language, list titles, sleep timer, incognito",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-
-        if (onOpenVideoSettings != null) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onOpenVideoSettings),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Movie,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Column(modifier = Modifier.padding(start = 16.dp)) {
-                        Text(text = "Video", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            text = "Fast seek, pop-up player, frame rate, resolution",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-
-        if (onOpenSubtitles != null) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onOpenSubtitles),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Subtitles,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Column(modifier = Modifier.padding(start = 16.dp)) {
-                        Text(text = "Subtitles", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            text = "Presets, language, encoding, font, background, shadow, outline",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-
-        if (onOpenAudio != null) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onOpenAudio),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Headphones,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Column(modifier = Modifier.padding(start = 16.dp)) {
-                        Text(text = "Audio", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            text = "Calls, headset, language, replay gain",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-
-        if (onOpenGeneral != null) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onOpenGeneral),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Column(modifier = Modifier.padding(start = 16.dp)) {
-                        Text(text = "General", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            text = "Media library, background mode, network, history, permissions",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-
-        if (onOpenRemoteAccess != null) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onOpenRemoteAccess),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Wifi,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Column(modifier = Modifier.padding(start = 16.dp)) {
-                        Text(text = "Remote access", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            text = "Control playback and browse files from a browser on your network",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-
-        if (onOpenParentalControl != null) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onOpenParentalControl),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Column(modifier = Modifier.padding(start = 16.dp)) {
-                        Text(text = "Parental control", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            text = "PIN code, restricted settings and Safe mode",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-
-        if (onOpenAdvanced != null) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onOpenAdvanced),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Build,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Column(modifier = Modifier.padding(start = 16.dp)) {
-                        Text(text = "Advanced", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            text = "Verbose logging and debug logs",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                 }
             }
         }
@@ -895,5 +548,33 @@ fun SettingToggleItem(
             )
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+    }
+}
+
+@Composable
+private fun ExtraSettingsRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String?,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(imageVector = icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
+        Column(modifier = Modifier.padding(start = 24.dp)) {
+            Text(text = title, style = MaterialTheme.typography.titleMedium)
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
