@@ -90,10 +90,66 @@ object EqualizerStore {
     private val _custom = MutableStateFlow<List<EqPreset>>(emptyList())
     val customPresets: StateFlow<List<EqPreset>> = _custom.asStateFlow()
 
+    private val _hidden = MutableStateFlow<Set<String>>(emptySet())
+    /** Preset ids the user hid from the quick-pick chips (the eye icon in the Equalizer list). */
+    val hiddenPresets: StateFlow<Set<String>> = _hidden.asStateFlow()
+
+    fun setHidden(id: String, hidden: Boolean) {
+        _hidden.value = if (hidden) _hidden.value + id else _hidden.value - id
+        persistHidden()
+    }
+
+    fun showAll() {
+        _hidden.value = emptySet()
+        persistHidden()
+    }
+
+    /** Hides every preset except the one in use, so the quick-pick list is never empty. */
+    fun hideAll() {
+        val keep = _state.value.presetId
+        _hidden.value = allPresets().map { it.id }.filter { it != keep }.toSet()
+        persistHidden()
+    }
+
+    private fun persistHidden() {
+        prefs()?.edit()?.putStringSet("hidden", _hidden.value)?.apply()
+    }
+
+    /** JSON for sharing presets between devices / backups. */
+    fun exportJson(presets: List<EqPreset>): String {
+        val arr = JSONArray()
+        presets.forEach {
+            arr.put(
+                JSONObject().put("name", it.name).put("preamp", it.preampDb.toDouble())
+                    .put("bands", JSONArray(it.bandsDb.map { v -> v.toDouble() }))
+            )
+        }
+        return JSONObject().put("version", 1).put("presets", arr).toString(2)
+    }
+
+    /** Adds the presets in [text] as custom presets; returns how many were imported. */
+    fun importJson(text: String): Int {
+        val arr = runCatching { JSONObject(text).getJSONArray("presets") }.getOrNull() ?: return 0
+        var count = 0
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val name = o.optString("name").trim().take(40)
+            val b = o.optJSONArray("bands") ?: continue
+            if (name.isEmpty() || b.length() != 10) continue
+            val bands = (0 until 10).map { b.optDouble(it, 0.0).toFloat().coerceIn(EQ_MIN_DB, EQ_MAX_DB) }
+            val preset = EqPreset("custom:$name", name, o.optDouble("preamp", 0.0).toFloat(), bands, builtIn = false)
+            _custom.value = _custom.value.filterNot { it.id == preset.id } + preset
+            count++
+        }
+        if (count > 0) persistCustom()
+        return count
+    }
+
     fun init(context: Context) {
         if (appContext != null) return
         appContext = context.applicationContext
         val prefs = prefs() ?: return
+        _hidden.value = prefs.getStringSet("hidden", emptySet())?.toSet() ?: emptySet()
         val bands = prefs.getString("bands", null)?.split(",")?.mapNotNull { it.toFloatOrNull() }
             ?.takeIf { it.size == 10 } ?: List(10) { 0f }
         _state.value = EqualizerSettings(
