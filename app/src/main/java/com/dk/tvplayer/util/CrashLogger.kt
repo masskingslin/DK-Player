@@ -20,6 +20,11 @@ import java.util.Locale
 object CrashLogger {
 
     private const val MAX_LOGS_KEPT = 10
+    private const val PREFS = "dk_crash_logger"
+    private const val KEY_PENDING = "pending_share"
+
+    private fun crashPrefs(context: Context) =
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun install(context: Context) {
         val appContext = context.applicationContext
@@ -53,6 +58,8 @@ object CrashLogger {
             append(stackTraceWriter.toString())
         }
         file.writeText(report)
+        // commit() (not apply()): the process is about to die, so the flag must hit disk now.
+        crashPrefs(context).edit().putString(KEY_PENDING, file.name).commit()
         copyToDownloads(context, "dk-player-crash_$timestamp.txt", report)
 
         // Keep only the most recent MAX_LOGS_KEPT files so this can't grow unbounded on
@@ -93,6 +100,20 @@ object CrashLogger {
     /** Most recent crash log, if any — used by the Settings "Share Crash Log" action. */
     fun latestLogFile(context: Context): File? =
         crashLogDir(context).listFiles()?.maxByOrNull { it.lastModified() }
+
+    /**
+     * The crash log from a previous run that the user hasn't been asked about yet, or null.
+     * Drives the "DK Player closed unexpectedly — share the report?" prompt on next launch.
+     */
+    fun pendingCrashLog(context: Context): File? {
+        val name = crashPrefs(context).getString(KEY_PENDING, null) ?: return null
+        return File(crashLogDir(context), name).takeIf { it.exists() }
+    }
+
+    /** Call once the user has answered the prompt (shared or dismissed) so it isn't shown again. */
+    fun markCrashHandled(context: Context) {
+        crashPrefs(context).edit().remove(KEY_PENDING).apply()
+    }
 
     fun hasLogs(context: Context): Boolean = crashLogDir(context).listFiles()?.isNotEmpty() == true
 }
