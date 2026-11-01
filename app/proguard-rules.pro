@@ -86,3 +86,18 @@
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
 -dontwarn javax.annotation.**
+
+# DataStore (preferences) parses its file with protobuf-lite via reflection on generated
+# fields. If R8 strips those fields the app works on first launch (no file yet) and then
+# crashes on every later launch once settings have been saved.
+-keepclassmembers class * extends androidx.datastore.preferences.protobuf.GeneratedMessageLite {
+    <fields>;
+}
+-keep class androidx.datastore.preferences.protobuf.** { *; }
+-keep class androidx.datastore.preferences.PreferencesProto** { *; }
+-keep class androidx.datastore.core.** { *; }
+-dontwarn androidx.datastore.**
+
+# Room: generated *_Impl classes are instantiated by name.
+-keep class * extends androidx.room.RoomDatabase { *; }
+-keep class * extends androidx.room.RoomDatabase_Impl { *; }
