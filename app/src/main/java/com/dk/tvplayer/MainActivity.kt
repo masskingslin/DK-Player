@@ -8,12 +8,24 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Rational
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.dk.tvplayer.data.local.AppThemeMode
+import com.dk.tvplayer.util.CrashLogger
+import com.dk.tvplayer.util.ShareFileUtils
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,8 +49,6 @@ import com.dk.tvplayer.ui.theme.dkShapes
 import com.dk.tvplayer.ui.theme.dkTypography
 import com.dk.tvplayer.util.EXTRA_PLAY_PATH
 import com.dk.tvplayer.util.EXTRA_PLAY_TITLE
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 
 /** Tracks whether a video is actively on-screen, so PiP can be auto-entered on user-leave. */
 object PipState {
@@ -89,44 +99,145 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Launch intent received before the UI finished starting; handled once it's ready. */
+    private var pendingLaunchIntent: Intent? = null
+
+    /** True once MainContent is composed (the ViewModel, player and prefs are all available). */
+    @Volatile
+    private var isUiReady = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Edge-to-edge: content draws behind transparent system bars (Scaffold-based screens
+        // add the insets themselves; the video player hides the bars entirely).
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        )
         super.onCreate(savedInstanceState)
-        requestRequiredPermissions()
-        handleLaunchIntent(intent)
-        // Remote access was left on: bring the server back up with the app.
-        if (com.dk.tvplayer.remote.RemoteAccessConfig.enabled.value) {
-            runCatching { com.dk.tvplayer.remote.RemoteAccessService.start(this) }
-        }
+        pendingLaunchIntent = intent
 
         setContent {
-            val state by viewModel.uiState.collectAsState()
-            val colorScheme = dkColorScheme(state.appSettings.themeMode, state.appSettings.themeSeedColor)
-            val videoFrameRate by viewModel.playerManager.videoFrameRateFlow.collectAsState()
-
-            LaunchedEffect(state.appSettings.matchDisplayFrameRate, videoFrameRate) {
-                if (state.appSettings.matchDisplayFrameRate && videoFrameRate != null) {
-                    applyPreferredDisplayMode(videoFrameRate!!)
-                } else {
-                    resetPreferredDisplayMode()
+            // The first frame is just a black surface; heavy initialisation (preferences,
+            // settings DataStore) has been running on a background thread since
+            // Application.onCreate, so nothing here blocks the main thread on disk I/O.
+            var ready by remember { mutableStateOf(app.isStartupDone) }
+            if (ready) {
+                MainContent()
+            } else {
+                LaunchedEffect(Unit) {
+                    app.awaitStartup()
+                    ready = true
                 }
-            }
-
-            MaterialTheme(colorScheme = colorScheme, typography = dkTypography, shapes = dkShapes) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background)
-                ) {
-                    AppEntry(viewModel = viewModel)
-                }
+                        .background(androidx.compose.ui.graphics.Color.Black)
+                )
             }
         }
+    }
+
+    @Composable
+    private fun MainContent() {
+        val context = LocalContext.current
+        val state by viewModel.uiState.collectAsState()
+        val colorScheme = dkColorScheme(state.appSettings.themeMode, state.appSettings.themeSeedColor)
+        val videoFrameRate by viewModel.playerManager.videoFrameRateFlow.collectAsState()
+
+        // One-time work that needs the ViewModel / prefs, so it can't run in onCreate any more.
+        LaunchedEffect(Unit) {
+            isUiReady = true
+            requestRequiredPermissions()
+            handleLaunchIntent(pendingLaunchIntent)
+            pendingLaunchIntent = null
+            // Remote access was left on: bring the server back up with the app.
+            if (com.dk.tvplayer.remote.RemoteAccessConfig.enabled.value) {
+                runCatching { com.dk.tvplayer.remote.RemoteAccessService.start(context) }
+            }
+            viewModel.notifyAppForegrounded()
+        }
+
+        // System-bar icon colours follow the theme (light icons on dark, dark icons on light).
+        val darkBars = when (state.appSettings.themeMode) {
+            AppThemeMode.SYSTEM -> isSystemInDarkTheme()
+            AppThemeMode.LIGHT -> false
+            AppThemeMode.DARK, AppThemeMode.AMOLED -> true
+        }
+        DisposableEffect(darkBars) {
+            val transparent = android.graphics.Color.TRANSPARENT
+            val style = if (darkBars) {
+                SystemBarStyle.dark(transparent)
+            } else {
+                SystemBarStyle.light(transparent, transparent)
+            }
+            enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+            onDispose { }
+        }
+
+        LaunchedEffect(state.appSettings.matchDisplayFrameRate, videoFrameRate) {
+            if (state.appSettings.matchDisplayFrameRate && videoFrameRate != null) {
+                applyPreferredDisplayMode(videoFrameRate!!)
+            } else {
+                resetPreferredDisplayMode()
+            }
+        }
+
+        MaterialTheme(colorScheme = colorScheme, typography = dkTypography, shapes = dkShapes) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+            ) {
+                AppEntry(viewModel = viewModel)
+            }
+            CrashReportPrompt()
+        }
+    }
+
+    /**
+     * Shown on the first launch after a crash: offers to share the saved crash report
+     * (stack trace + device info, no personal data). Answered once, then never repeated
+     * for that crash.
+     */
+    @Composable
+    private fun CrashReportPrompt() {
+        val context = LocalContext.current
+        var crashFile by remember { mutableStateOf(CrashLogger.pendingCrashLog(context)) }
+        val file = crashFile ?: return
+        AlertDialog(
+            onDismissRequest = {
+                CrashLogger.markCrashHandled(context)
+                crashFile = null
+            },
+            title = { Text("DK Player closed unexpectedly") },
+            text = {
+                Text(
+                    "A crash report was saved. Share it so the problem can be fixed? " +
+                        "It contains the error details and your device model — no personal data."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    CrashLogger.markCrashHandled(context)
+                    crashFile = null
+                    runCatching {
+                        ShareFileUtils.shareTextFile(context, file.name, "text/plain", file.readText())
+                    }
+                }) { Text("Share report") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    CrashLogger.markCrashHandled(context)
+                    crashFile = null
+                }) { Text("Not now") }
+            }
+        )
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleLaunchIntent(intent)
+        if (isUiReady) handleLaunchIntent(intent) else pendingLaunchIntent = intent
     }
 
     /** A pinned launcher shortcut carries the video path/title; hand it to the UI to play. */
@@ -205,8 +316,10 @@ class MainActivity : ComponentActivity() {
         // Leave local playback running when in PiP, when casting (irrelevant to this
         // device's screen), or when the user opted in to background audio playback.
         if (!isInPictureInPictureMode && !FloatingPlayerState.isActive) {
+            if (!isUiReady) return
+            // Cached copy of the setting (kept current by the ViewModel) — no disk read here.
             val backgroundAudioEnabled = viewModel.effectiveBackgroundPlayback(
-                runBlocking { app.settingsDataStore.settingsFlow.first().backgroundAudioPlayback }
+                viewModel.uiState.value.appSettings.backgroundAudioPlayback
             )
             val isCasting = viewModel.playerManager.isCastingFlow.value
             if (!backgroundAudioEnabled && !isCasting && viewModel.playerManager.exoPlayer.isPlaying) {
@@ -222,7 +335,7 @@ class MainActivity : ComponentActivity() {
         // Application, not the service. The service simply gets restarted the next time
         // playback continues while the app is backgrounded.
         runCatching { stopService(Intent(this, PlaybackService::class.java)) }
-        viewModel.notifyAppForegrounded()
+        if (isUiReady) viewModel.notifyAppForegrounded()
     }
 
     private fun requestRequiredPermissions() {

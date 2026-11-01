@@ -1,11 +1,18 @@
 package com.dk.tvplayer
 
 import android.app.Application
+import android.os.Handler
+import android.os.Looper
 import androidx.media3.common.util.UnstableApi
 import com.dk.tvplayer.data.local.SettingsDataStore
 import com.dk.tvplayer.download.DownloadManagerHolder
 import com.dk.tvplayer.player.TvExoPlayerManager
 import com.dk.tvplayer.util.CrashLogger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
@@ -17,18 +24,47 @@ import kotlinx.coroutines.runBlocking
  * MainActivity's ViewModel and PlaybackService share one player. The download manager
  * is here for the same reason: DkDownloadService needs the same DownloadManager/cache
  * instance the UI uses to start and monitor downloads.
+ *
+ * Startup is split in two so the process no longer blocks the main thread on disk I/O
+ * before the first frame:
+ *  1. [onCreate] only installs the crash logger and kicks off [startup] on a background
+ *     thread: every SharedPreferences-backed store, plus the one DataStore read the
+ *     player needs (hardware acceleration), which used to be a `runBlocking` on main.
+ *  2. [playerManager] / [downloadManagerHolder] are built lazily, on the main thread
+ *     (media3 players and the Cast SDK require the application looper), the first time
+ *     something needs them — normally MainActivity, after it has drawn its first frame
+ *     and awaited [awaitStartup]. Services started by the system before the UI exists
+ *     simply wait for [startup] themselves.
  */
 @UnstableApi
 class DkPlayerApplication : Application() {
 
+    private val startupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     lateinit var settingsDataStore: SettingsDataStore
         private set
 
-    lateinit var playerManager: TvExoPlayerManager
-        private set
+    /** Completes with the stored "hardware acceleration" setting once all prefs are loaded. */
+    private lateinit var startup: Deferred<Boolean>
 
-    lateinit var downloadManagerHolder: DownloadManagerHolder
-        private set
+    /** True once background initialisation has finished (safe to touch the prefs stores). */
+    val isStartupDone: Boolean get() = startup.isCompleted
+
+    /** Suspends (without blocking the main thread) until background initialisation is done. */
+    suspend fun awaitStartup() {
+        startup.await()
+    }
+
+    private class Core(
+        val downloadManagerHolder: DownloadManagerHolder,
+        val playerManager: TvExoPlayerManager
+    )
+
+    private val core: Core by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { buildCore() }
+
+    val downloadManagerHolder: DownloadManagerHolder get() = core.downloadManagerHolder
+
+    val playerManager: TvExoPlayerManager get() = core.playerManager
 
     override fun onCreate() {
         super.onCreate()
@@ -37,37 +73,48 @@ class DkPlayerApplication : Application() {
         // being visible to whoever happens to have a debugger attached.
         CrashLogger.install(this)
         settingsDataStore = SettingsDataStore(this)
-        com.dk.tvplayer.player.EqualizerStore.init(this)
-        com.dk.tvplayer.util.DebugLogger.init(this)
-        com.dk.tvplayer.util.AdvancedPrefs.init(this)
-        com.dk.tvplayer.util.ParentalControl.init(this)
-        com.dk.tvplayer.util.UiPrefs.init(this)
-        com.dk.tvplayer.util.PlaybackPrefs.init(this)
-        com.dk.tvplayer.util.MediaListCache.init(this)
-        com.dk.tvplayer.util.SubtitlePrefs.init(this)
-        com.dk.tvplayer.util.LockscreenCover.init(this)
-        com.dk.tvplayer.remote.RemoteAccessConfig.init(this)
-        // Hardware acceleration is baked into the player at construction time (see
-        // TvExoPlayerManager's doc comment), so this one settings read has to happen
-        // synchronously before the player is built. It normally resolves instantly
-        // against the DataStore's cached/default value, but it's still disk I/O on the
-        // main thread during app startup — if the preferences file is slow to open or
-        // fails to read for any reason, this must never be allowed to crash or hang
-        // app launch, so it falls back to the safe default (hardware acceleration on).
-        val hwAccel = runCatching {
-            runBlocking { settingsDataStore.settingsFlow.first().hwAcceleration }
-        }.getOrDefault(true)
-        downloadManagerHolder = DownloadManagerHolder(
+
+        startup = startupScope.async {
+            // Each store is isolated: one corrupt preferences file must never take the
+            // whole app down (or leave the other stores uninitialised).
+            val inits = listOf<() -> Unit>(
+                { com.dk.tvplayer.player.EqualizerStore.init(this@DkPlayerApplication) },
+                { com.dk.tvplayer.util.DebugLogger.init(this@DkPlayerApplication) },
+                { com.dk.tvplayer.util.AdvancedPrefs.init(this@DkPlayerApplication) },
+                { com.dk.tvplayer.util.ParentalControl.init(this@DkPlayerApplication) },
+                { com.dk.tvplayer.util.UiPrefs.init(this@DkPlayerApplication) },
+                { com.dk.tvplayer.util.PlaybackPrefs.init(this@DkPlayerApplication) },
+                { com.dk.tvplayer.util.MediaListCache.init(this@DkPlayerApplication) },
+                { com.dk.tvplayer.util.SubtitlePrefs.init(this@DkPlayerApplication) },
+                { com.dk.tvplayer.util.LockscreenCover.init(this@DkPlayerApplication) },
+                { com.dk.tvplayer.remote.RemoteAccessConfig.init(this@DkPlayerApplication) }
+            )
+            inits.forEach { runCatching(it) }
+            // Hardware acceleration is baked into the player at construction time (see
+            // TvExoPlayerManager's doc comment), so this one settings read has to finish
+            // before the player is built. If the preferences file can't be read it falls
+            // back to the safe default (hardware acceleration on) instead of crashing.
+            runCatching { settingsDataStore.settingsFlow.first().hwAcceleration }.getOrDefault(true)
+        }
+    }
+
+    private fun buildCore(): Core {
+        // Normally already finished; only blocks if a service wins the race with startup.
+        val hwAccel = runCatching { runBlocking { startup.await() } }.getOrDefault(true)
+        val holder = DownloadManagerHolder(
             this,
             userAgent = com.dk.tvplayer.util.AdvancedPrefs.httpUserAgent.value
         )
-        playerManager = TvExoPlayerManager(
+        val player = TvExoPlayerManager(
             this,
             hwAccelerationEnabled = hwAccel &&
                 com.dk.tvplayer.util.PlaybackPrefs.hardwareAcceleration.value != com.dk.tvplayer.util.HardwareAcceleration.DISABLED,
-            cacheDataSourceFactory = downloadManagerHolder.cacheDataSourceFactory,
+            cacheDataSourceFactory = holder.cacheDataSourceFactory,
             networkCachingMs = com.dk.tvplayer.util.AdvancedPrefs.networkCachingMs.value
         )
-        playerManager.initCast()
+        // The Cast SDK must be initialised on the main thread, and probing Google Play
+        // services is slow on some devices — do it right after startup, not inside it.
+        Handler(Looper.getMainLooper()).post { runCatching { player.initCast() } }
+        return Core(holder, player)
     }
 }
