@@ -107,8 +107,8 @@ object SettingsBackupManager {
                 SortOption.valueOf(settingsJson.optString("sortOption", SortOption.NAME_ASC.name))
             }.getOrDefault(SortOption.NAME_ASC),
             themeMode = runCatching {
-                AppThemeMode.valueOf(settingsJson.optString("themeMode", AppThemeMode.DARK.name))
-            }.getOrDefault(AppThemeMode.DARK),
+                AppThemeMode.valueOf(settingsJson.optString("themeMode", AppThemeMode.AMOLED.name))
+            }.getOrDefault(AppThemeMode.AMOLED),
             themeSeedColor = settingsJson.optLong("themeSeedColor", 0xFFB39DDB),
             defaultPlaybackSpeed = settingsJson.optDouble("defaultPlaybackSpeed", 1.0).toFloat(),
             fastSeekEnabled = settingsJson.optBoolean("fastSeekEnabled", false),
