@@ -136,7 +136,15 @@ fun dkColorScheme(themeMode: AppThemeMode, seedColorArgb: Long): ColorScheme {
         base.copy(
             background = Color.Black,
             surface = Color.Black,
-            surfaceVariant = Color(0xFF141414)
+            surfaceDim = Color.Black,
+            surfaceVariant = Color(0xFF141414),
+            // Navigation bar, dialogs, menus and cards use the surfaceContainer* roles;
+            // left at their defaults they show up as dark grey on an OLED panel.
+            surfaceContainerLowest = Color.Black,
+            surfaceContainerLow = Color(0xFF070707),
+            surfaceContainer = Color(0xFF0D0D0D),
+            surfaceContainerHigh = Color(0xFF141414),
+            surfaceContainerHighest = Color(0xFF1B1B1B)
         )
     } else {
         base
