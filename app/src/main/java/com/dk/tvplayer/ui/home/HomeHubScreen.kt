@@ -41,6 +41,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -79,8 +80,11 @@ fun HomeHubScreen(
     // "Show missing media" off hides history entries whose local file has been deleted.
     val showMissingMedia by com.dk.tvplayer.util.UiPrefs.showMissingMedia.collectAsState()
     val visibleHistory = remember(state.history, showMissingMedia) {
-        if (showMissingMedia) state.history
-        else state.history.filter { it.mediaUrl.startsWith("http") || java.io.File(it.mediaUrl).exists() }
+        // distinctBy: the same URL can appear more than once in history, and it is used as
+        // the LazyRow key — a duplicate key crashes the whole screen.
+        (if (showMissingMedia) state.history
+        else state.history.filter { it.mediaUrl.startsWith("http") || java.io.File(it.mediaUrl).exists() })
+            .distinctBy { it.mediaUrl }
     }
 
     // "Show last playlist tip": once per app start, offer to resume what was playing last.
@@ -252,6 +256,24 @@ fun HomeHubScreen(
 
 @Composable
 private fun HomeHeader() {
+    // Re-evaluated every 30 s and whenever the app returns to the foreground, so
+    // "Good evening" turns into "Good night" without leaving the screen.
+    var hour by remember { mutableIntStateOf(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(30_000)
+            hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        }
+    }
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+        hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+    }
+    val greeting = when (hour) {
+        in 5..11 -> "Good morning"
+        in 12..16 -> "Good afternoon"
+        in 17..21 -> "Good evening"
+        else -> "Good night"
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -267,14 +289,7 @@ private fun HomeHeader() {
             .padding(horizontal = DkSpacing.lg, vertical = DkSpacing.lg)
     ) {
         Text(
-            text = remember {
-                when (java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)) {
-                    in 5..11 -> "Good morning"
-                    in 12..16 -> "Good afternoon"
-                    in 17..21 -> "Good evening"
-                    else -> "Good night"
-                }
-            },
+            text = greeting,
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onPrimaryContainer
         )
