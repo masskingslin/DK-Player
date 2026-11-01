@@ -18,7 +18,7 @@ import androidx.room.RoomDatabase
         BookmarkEntity::class
     ],
     version = 7,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class TvDatabase : RoomDatabase() {
     abstract fun channelDao(): TvChannelDao
@@ -40,15 +40,13 @@ abstract class TvDatabase : RoomDatabase() {
                     TvDatabase::class.java,
                     "dk_tvplayer_database.db"
                 )
-                    // Playlist tables were new in v3, the channels table's
-                    // userAgent/referrer columns were new in v4, playlist_items'
-                    // isFavorite column was new in v5, the video_groups /
-                    // local_video_meta tables are new in v6, and the bookmarks table
-                    // is new in v7; destructive fallback is acceptable here since
-                    // channels/streams/history are all re-derived or re-added by the
-                    // user (e.g. by reloading their M3U) rather than being
-                    // irreplaceable data.
-                    .fallbackToDestructiveMigration()
+                    // Real migrations for v3 -> v7 (see TvMigrations): playlists, bookmarks,
+                    // favourites and history are kept across app updates.
+                    .addMigrations(*TvMigrations.ALL)
+                    // v1/v2 pre-date any recorded schema, so there is nothing to migrate
+                    // from; rebuild those (and any downgrade) rather than crash.
+                    .fallbackToDestructiveMigrationFrom(true, 1, 2)
+                    .fallbackToDestructiveMigrationOnDowngrade(true)
                     .build()
                 INSTANCE = instance
                 instance

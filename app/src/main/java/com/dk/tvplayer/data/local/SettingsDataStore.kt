@@ -69,7 +69,7 @@ data class AppSettings(
     val backgroundAudioPlayback: Boolean = false,
     val autoResumePlayback: Boolean = true,
     val sortOption: SortOption = SortOption.NAME_ASC,
-    val themeMode: AppThemeMode = AppThemeMode.DARK,
+    val themeMode: AppThemeMode = AppThemeMode.AMOLED,
     val themeSeedColor: Long = 0xFFB39DDB, // soft lavender, matches existing dark UI
     val defaultPlaybackSpeed: Float = 1.0f,
     // Fast seek trades exact-frame accuracy for much quicker seeking by snapping to the
@@ -199,7 +199,7 @@ class SettingsDataStore(private val context: Context) {
             sortOption = prefs[Keys.SORT_OPTION]?.let { runCatching { SortOption.valueOf(it) }.getOrNull() }
                 ?: SortOption.NAME_ASC,
             themeMode = prefs[Keys.THEME_MODE]?.let { runCatching { AppThemeMode.valueOf(it) }.getOrNull() }
-                ?: AppThemeMode.DARK,
+                ?: AppThemeMode.AMOLED,
             themeSeedColor = prefs[Keys.THEME_SEED]?.toLongOrNull() ?: 0xFFB39DDB,
             defaultPlaybackSpeed = prefs[Keys.PLAYBACK_SPEED]?.toFloatOrNull() ?: 1.0f,
             fastSeekEnabled = prefs[Keys.FAST_SEEK] ?: false,
