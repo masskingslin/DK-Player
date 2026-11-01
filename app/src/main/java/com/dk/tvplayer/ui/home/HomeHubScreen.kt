@@ -239,6 +239,7 @@ fun HomeHubScreen(
             } else {
                 items(state.customStreams, key = { it.id }) { stream ->
                     StreamRowItem(
+                        modifier = Modifier.animateItem(),
                         stream = stream,
                         onPlay = { onPlayMedia(stream.streamUrl, stream.name, false) },
                         onDelete = { viewModel.deleteCustomStream(stream) }
@@ -266,13 +267,20 @@ private fun HomeHeader() {
             .padding(horizontal = DkSpacing.lg, vertical = DkSpacing.lg)
     ) {
         Text(
-            text = "DK-Player",
+            text = remember {
+                when (java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)) {
+                    in 5..11 -> "Good morning"
+                    in 12..16 -> "Good afternoon"
+                    in 17..21 -> "Good evening"
+                    else -> "Good night"
+                }
+            },
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onPrimaryContainer
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "Live channels, your videos, and saved streams — all in one place.",
+            text = "What are we watching today?",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
         )
@@ -320,7 +328,8 @@ private fun QuickActionCard(
     modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = modifier.clickable(onClick = onClick),
+        onClick = onClick,
+        modifier = modifier,
         shape = DkShapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -355,9 +364,8 @@ fun HistoryCard(history: HistoryEntity, onClick: () -> Unit) {
     }
 
     Card(
-        modifier = Modifier
-            .size(width = 210.dp, height = 122.dp)
-            .clickable(onClick = onClick),
+        onClick = onClick,
+        modifier = Modifier.size(width = 220.dp, height = 128.dp),
         shape = DkShapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -386,7 +394,7 @@ fun HistoryCard(history: HistoryEntity, onClick: () -> Unit) {
             Column {
                 if (progress > 0f) {
                     LinearProgressIndicator(
-                        progress = progress,
+                        progress = { progress },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(4.dp)
@@ -397,7 +405,7 @@ fun HistoryCard(history: HistoryEntity, onClick: () -> Unit) {
                     Spacer(modifier = Modifier.height(6.dp))
                 }
                 Text(
-                    text = history.mediaUrl,
+                    text = historySubtitle(history, progress),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
@@ -408,12 +416,25 @@ fun HistoryCard(history: HistoryEntity, onClick: () -> Unit) {
     }
 }
 
+/** "12 min left" for partly-watched items, otherwise the file/host name instead of a raw URL. */
+private fun historySubtitle(history: HistoryEntity, progress: Float): String {
+    if (progress > 0f && progress < 0.98f && history.durationMs > 0) {
+        val minsLeft = ((history.durationMs - history.lastPositionMs) / 60_000L).coerceAtLeast(1L)
+        return if (minsLeft >= 60) "${minsLeft / 60} h ${minsLeft % 60} min left" else "$minsLeft min left"
+    }
+    val url = history.mediaUrl
+    return if (url.startsWith("http")) {
+        runCatching { android.net.Uri.parse(url).host }.getOrNull() ?: url
+    } else {
+        url.substringAfterLast('/')
+    }
+}
+
 @Composable
 private fun FavoriteChannelCard(channel: TvChannelEntity, onClick: () -> Unit) {
     Card(
-        modifier = Modifier
-            .size(width = 150.dp, height = 90.dp)
-            .clickable(onClick = onClick),
+        onClick = onClick,
+        modifier = Modifier.size(width = 156.dp, height = 96.dp),
         shape = DkShapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -446,12 +467,12 @@ private fun FavoriteChannelCard(channel: TvChannelEntity, onClick: () -> Unit) {
 fun StreamRowItem(
     stream: StreamEntity,
     onPlay: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onPlay),
+        onClick = onPlay,
+        modifier = modifier.fillMaxWidth(),
         shape = DkShapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
