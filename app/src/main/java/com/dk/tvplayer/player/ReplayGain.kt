@@ -8,7 +8,7 @@ import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.extractor.metadata.id3.InternalFrame
 import androidx.media3.extractor.metadata.id3.TextInformationFrame
-import androidx.media3.extractor.metadata.flac.VorbisComment
+import androidx.media3.extractor.metadata.vorbis.VorbisComment
 import com.dk.tvplayer.util.PlaybackPrefs
 import com.dk.tvplayer.util.ReplayGainMode
 import kotlin.math.log10
