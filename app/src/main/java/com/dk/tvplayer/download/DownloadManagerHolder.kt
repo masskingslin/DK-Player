@@ -57,6 +57,11 @@ class DownloadManagerHolder(context: Context, userAgent: String? = null) {
     private val upstreamDataSourceFactory = DefaultDataSource.Factory(
         context,
         DefaultHttpDataSource.Factory().apply {
+            // IPTV servers are slow to answer and often redirect between http and https; the
+            // defaults (8 s timeouts, no cross-protocol redirects) made channels fail or hang.
+            setConnectTimeoutMs(15_000)
+            setReadTimeoutMs(20_000)
+            setAllowCrossProtocolRedirects(true)
             // Custom user agent from Advanced settings (applied at startup).
             if (!userAgent.isNullOrBlank()) setUserAgent(userAgent)
         }
