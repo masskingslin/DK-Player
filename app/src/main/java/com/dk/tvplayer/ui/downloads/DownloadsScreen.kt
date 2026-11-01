@@ -138,7 +138,7 @@ private fun DownloadRow(download: DownloadItem, onDelete: () -> Unit, onRetry: (
             }
             if (download.state == Download.STATE_DOWNLOADING) {
                 LinearProgressIndicator(
-                    progress = (download.percentDownloaded / 100f).coerceIn(0f, 1f),
+                    progress = { (download.percentDownloaded / 100f).coerceIn(0f, 1f) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 8.dp)
