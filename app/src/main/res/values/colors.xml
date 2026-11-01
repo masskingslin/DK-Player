@@ -9,7 +9,7 @@
     <color name="accent_red">#EF4444</color>
 
     <!-- TV & Mobile Surfaces (Dark Theme) -->
-    <color name="tv_background">#050505</color>
+    <color name="tv_background">#000000</color>
     <color name="tv_surface_dark">#121212</color>
     <color name="tv_surface_drawer">#F2101010</color>
     <color name="tv_overlay_gradient_end">#F7050505</color>

@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.DKPlayer" parent="android:Theme.Material.NoActionBar">
-        <!-- Window & Fullscreen Configuration for TV & Mobile -->
+        <!-- Window configuration (edge-to-edge is enabled in MainActivity; the video player hides the bars itself) -->
         <item name="android:windowBackground">@color/tv_background</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowActionBar">false</item>
-        <item name="android:windowFullscreen">true</item>
         <item name="android:windowOverscan">false</item>
         <item name="android:windowIsTranslucent">false</item>
 
