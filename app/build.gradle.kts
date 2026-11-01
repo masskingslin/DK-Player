@@ -55,8 +55,11 @@ android {
         release {
             // R8 code shrinking + optimisation and resource shrinking. Obfuscation is
             // switched off in proguard-rules.pro on purpose so crash reports stay readable.
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // Set env DK_MINIFY=false (or run the workflow with "minify" off) to build
+            // without shrinking, e.g. to find out whether R8 is behind a release-only crash.
+            val minify = System.getenv("DK_MINIFY") != "false"
+            isMinifyEnabled = minify
+            isShrinkResources = minify
             signingConfig = if (hasReleaseKey) {
                 signingConfigs.getByName("release")
             } else {
