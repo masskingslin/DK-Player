@@ -56,3 +56,33 @@
     public static **[] values();
 }
 -dontwarn org.xmlpull.v1.**
+
+# ---------------------------------------------------------------------------
+# Release build hardening (R8 shrinking is ON)
+# ---------------------------------------------------------------------------
+# Keep readable class names so crash reports shared from the app (CrashLogger) can be
+# read directly without a mapping file. Shrinking + optimisation still apply. Remove this
+# line (and keep app/build/outputs/mapping/release/mapping.txt) to also obfuscate.
+-dontobfuscate
+-keepattributes SourceFile,LineNumberTable,Signature,*Annotation*,InnerClasses,EnclosingMethod
+
+# Classes looked up by name from the manifest metadata / by libraries (not seen by R8).
+-keep class com.dk.tvplayer.cast.DkCastOptionsProvider { *; }
+-keep class androidx.appcompat.app.AppLocalesMetadataHolderService { *; }
+
+# Foreground/Media services and the Application are manifest entries (kept automatically),
+# but their @UnstableApi media3 callbacks are invoked reflectively by the framework.
+-keep class com.dk.tvplayer.player.PlaybackService { *; }
+-keep class com.dk.tvplayer.download.DkDownloadService { *; }
+
+# Google Cast framework
+-keep class com.google.android.gms.cast.framework.** { *; }
+-dontwarn com.google.android.gms.**
+
+# OkHttp / Okio optional platform classes
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn org.conscrypt.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.openjsse.**
+-dontwarn javax.annotation.**
