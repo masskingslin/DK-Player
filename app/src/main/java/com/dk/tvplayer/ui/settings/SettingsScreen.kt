@@ -122,19 +122,26 @@ fun SettingsScreen(
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // VLC-style list of the dedicated settings pages.
-        Text(text = "Extra settings", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        onOpenGeneral?.let { ExtraSettingsRow(Icons.Default.Settings, "General", "Media library, network, history, permissions", it) }
-        onOpenInterface?.let { ExtraSettingsRow(Icons.Default.Palette, "Interface", null, it) }
+        Text(text = "Settings", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(4.dp))
+
+        SettingsSectionLabel("Playback")
         onOpenVideoSettings?.let { ExtraSettingsRow(Icons.Default.Movie, "Video", null, it) }
-        onOpenSubtitles?.let { ExtraSettingsRow(Icons.Default.Subtitles, "Subtitles", null, it) }
         onOpenAudio?.let { ExtraSettingsRow(Icons.Default.MusicNote, "Audio", null, it) }
         onOpenEqualizer?.let { ExtraSettingsRow(Icons.Default.Tune, "Equalizer", null, it) }
-        onOpenCasting?.let { ExtraSettingsRow(Icons.Default.Cast, "Casting", null, it) }
+        onOpenSubtitles?.let { ExtraSettingsRow(Icons.Default.Subtitles, "Subtitles", null, it) }
+
+        SettingsSectionLabel("App")
+        onOpenInterface?.let { ExtraSettingsRow(Icons.Default.Palette, "Interface", null, it) }
+        onOpenGeneral?.let { ExtraSettingsRow(Icons.Default.Settings, "General", "Media library, network, history, permissions", it) }
         onOpenParentalControl?.let { ExtraSettingsRow(Icons.Default.VerifiedUser, "Parental control", null, it) }
+
+        SettingsSectionLabel("Connect")
+        onOpenCasting?.let { ExtraSettingsRow(Icons.Default.Cast, "Casting", null, it) }
         onOpenRemoteAccess?.let { ExtraSettingsRow(Icons.Default.Wifi, "Remote access", null, it) }
         onOpenAndroidAuto?.let { ExtraSettingsRow(Icons.Default.DirectionsCar, "Android Auto", null, it) }
+
+        SettingsSectionLabel("System")
         onOpenAdvanced?.let { ExtraSettingsRow(Icons.Default.Build, "Advanced", null, it) }
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -577,4 +584,15 @@ private fun ExtraSettingsRow(
             }
         }
     }
+}
+
+
+@Composable
+private fun SettingsSectionLabel(text: String) {
+    Text(
+        text = text.uppercase(),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 6.dp)
+    )
 }
