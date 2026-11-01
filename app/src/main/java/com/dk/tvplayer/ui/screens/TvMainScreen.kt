@@ -41,7 +41,14 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
+import com.dk.tvplayer.ui.components.AudioTrackDialog
+import com.dk.tvplayer.ui.components.VideoFitOptions
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dk.tvplayer.data.local.TvChannelEntity
@@ -58,7 +65,27 @@ fun TvMainScreen(viewModel: TvPlayerViewModel) {
     val state by viewModel.uiState.collectAsState()
     val isPlaying by viewModel.playerManager.isPlayingFlow.collectAsState()
     val playbackError by viewModel.playerManager.playbackErrorFlow.collectAsState()
-    val focusRequester = remember { FocusRequester() }
+    // Focus starts on the video area so the remote controls playback straight away; Back
+    // (or D-pad Left from the sidebar side) hands focus to the channel list.
+    val playerFocusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    var resizeMode by remember { mutableStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
+    var fitLabel by remember { mutableStateOf<String?>(null) }
+    var showAudioDialog by remember { mutableStateOf(false) }
+
+    fun cycleAspectRatio() {
+        val idx = VideoFitOptions.indexOfFirst { it.resizeMode == resizeMode }
+        val next = VideoFitOptions[(idx + 1).mod(VideoFitOptions.size)]
+        resizeMode = next.resizeMode
+        fitLabel = next.label
+    }
+
+    LaunchedEffect(fitLabel) {
+        if (fitLabel != null) {
+            kotlinx.coroutines.delay(1500)
+            fitLabel = null
+        }
+    }
 
     fun goToNextChannel() {
         val channels = state.filteredChannels
@@ -77,18 +104,21 @@ fun TvMainScreen(viewModel: TvPlayerViewModel) {
     }
 
     LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+        runCatching { playerFocusRequester.requestFocus() }
     }
 
     Row(
         modifier = Modifier
             .fillMaxSize()
-            .focusRequester(focusRequester)
-            .focusable()
             .onKeyEvent { keyEvent ->
-                // Remote-control / attached-keyboard shortcuts for TV playback.
+                // Dedicated remote keys work from anywhere on screen. D-pad keys are NOT
+                // handled here (they must keep moving focus around the channel list);
+                // the video area handles its own D-pad keys below. Only KeyDown is acted
+                // on — handling key-up as well made play/pause cancel itself out and
+                // doubled every seek.
+                if (keyEvent.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when (keyEvent.key) {
-                    Key.Spacebar, Key.MediaPlayPause, Key.DirectionCenter, Key.Enter -> {
+                    Key.Spacebar, Key.MediaPlayPause -> {
                         viewModel.playerManager.togglePlayPause(); true
                     }
                     Key.ChannelUp, Key.PageUp, Key.MediaNext -> {
@@ -97,11 +127,11 @@ fun TvMainScreen(viewModel: TvPlayerViewModel) {
                     Key.ChannelDown, Key.PageDown, Key.MediaPrevious -> {
                         goToPreviousChannel(); true
                     }
-                    Key.DirectionLeft, Key.MediaRewind -> {
+                    Key.MediaRewind -> {
                         val pos = viewModel.playerManager.currentPositionFlow.value
                         viewModel.playerManager.seekTo((pos - 10_000).coerceAtLeast(0)); true
                     }
-                    Key.DirectionRight, Key.MediaFastForward -> {
+                    Key.MediaFastForward -> {
                         val pos = viewModel.playerManager.currentPositionFlow.value
                         val dur = viewModel.playerManager.durationFlow.value
                         viewModel.playerManager.seekTo((pos + 10_000).coerceAtMost(dur)); true
@@ -112,7 +142,7 @@ fun TvMainScreen(viewModel: TvPlayerViewModel) {
     ) {
         Column(
             modifier = Modifier
-                .width(360.dp)
+                .width(400.dp)
                 .fillMaxHeight()
                 .background(
                     Brush.verticalGradient(
@@ -126,11 +156,12 @@ fun TvMainScreen(viewModel: TvPlayerViewModel) {
                     width = 1.dp,
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
                 )
-                .padding(16.dp)
+                // ~5% inner margin keeps content inside the TV safe area (overscan).
+                .padding(horizontal = 24.dp, vertical = 28.dp)
         ) {
             Text(
                 text = "DK-Player TV",
-                style = MaterialTheme.typography.headlineSmall,
+                style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.height(12.dp))
@@ -152,9 +183,9 @@ fun TvMainScreen(viewModel: TvPlayerViewModel) {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(90.dp)
+                    .height(132.dp)
             ) {
-                items(state.categories) { category ->
+                items(state.categories, key = { it }) { category ->
                     CategoryChip(
                         label = category,
                         isSelected = state.selectedCategory == category,
@@ -170,7 +201,7 @@ fun TvMainScreen(viewModel: TvPlayerViewModel) {
                     .fillMaxWidth()
                     .weight(1f)
             ) {
-                items(state.filteredChannels) { channel ->
+                items(state.filteredChannels, key = { it.id }) { channel ->
                     TvChannelRow(
                         channel = channel,
                         isSelected = state.selectedChannel?.id == channel.id,
@@ -180,16 +211,62 @@ fun TvMainScreen(viewModel: TvPlayerViewModel) {
             }
         }
 
+        var playerFocused by remember { mutableStateOf(false) }
         Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
                 .background(Color.Black)
+                .focusRequester(playerFocusRequester)
+                .onFocusChanged { playerFocused = it.isFocused }
+                .focusable()
+                .onKeyEvent { keyEvent ->
+                    if (keyEvent.type != KeyEventType.KeyDown) return@onKeyEvent false
+                    when {
+                        // Focus is on one of the control buttons (a child): D-pad keys must keep
+                        // moving between buttons, so only Back is handled — it returns to the video.
+                        !playerFocused -> if (keyEvent.key == Key.Back) {
+                            runCatching { playerFocusRequester.requestFocus() }
+                            true
+                        } else {
+                            false
+                        }
+                        keyEvent.key == Key.DirectionCenter || keyEvent.key == Key.Enter -> {
+                            viewModel.playerManager.togglePlayPause(); true
+                        }
+                        keyEvent.key == Key.DirectionLeft -> {
+                            val pos = viewModel.playerManager.currentPositionFlow.value
+                            viewModel.playerManager.seekTo((pos - 10_000).coerceAtLeast(0)); true
+                        }
+                        keyEvent.key == Key.DirectionRight -> {
+                            val pos = viewModel.playerManager.currentPositionFlow.value
+                            val dur = viewModel.playerManager.durationFlow.value
+                            viewModel.playerManager.seekTo((pos + 10_000).coerceAtMost(dur)); true
+                        }
+                        // Back from the video area opens the channel list; Back again exits.
+                        keyEvent.key == Key.Back -> focusManager.moveFocus(FocusDirection.Left)
+                        else -> false
+                    }
+                }
         ) {
             TvPlayerSurface(
                 exoPlayer = viewModel.playerManager.exoPlayer,
+                resizeMode = resizeMode,
                 modifier = Modifier.fillMaxSize()
             )
+
+            fitLabel?.let { label ->
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(24.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), DkShapes.medium)
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
 
             TvEpgOverlay(
                 channel = state.selectedChannel,
@@ -211,9 +288,22 @@ fun TvMainScreen(viewModel: TvPlayerViewModel) {
                 onPlayPause = { viewModel.playerManager.togglePlayPause() },
                 onNextChannel = { goToNextChannel() },
                 onPreviousChannel = { goToPreviousChannel() },
+                onAspectRatio = { cycleAspectRatio() },
+                onAudioTracks = { showAudioDialog = true },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
+    }
+
+    if (showAudioDialog) {
+        AudioTrackDialog(
+            tracks = viewModel.playerManager.availableAudioTracks(),
+            onDismiss = { showAudioDialog = false },
+            onTrackSelected = { groupIndex, trackIndex ->
+                viewModel.playerManager.selectAudioTrack(groupIndex, trackIndex)
+                showAudioDialog = false
+            }
+        )
     }
 }
 
@@ -247,7 +337,7 @@ private fun CategoryChip(
 
     Text(
         text = label,
-        style = if (isSelected) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
+        style = if (isSelected) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
         color = contentColor,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
@@ -258,7 +348,7 @@ private fun CategoryChip(
             .background(containerColor)
             .onFocusChanged { isFocused = it.isFocused }
             .clickable { onClick() }
-            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .padding(horizontal = 18.dp, vertical = 11.dp)
     )
 }
 
@@ -293,10 +383,10 @@ fun TvChannelRow(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = if (isFocused) 4.dp else 0.dp)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
             Text(
                 text = channel.name,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleLarge,
                 color = if (isSelected) {
                     MaterialTheme.colorScheme.onPrimaryContainer
                 } else {
@@ -307,7 +397,7 @@ fun TvChannelRow(
             )
             Text(
                 text = channel.groupTitle,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.outline
             )
         }
