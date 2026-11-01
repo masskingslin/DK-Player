@@ -64,11 +64,19 @@ class DownloadTracker(private val context: Context, private val downloadManager:
     fun downloadStateFor(url: String): DownloadItem? = _downloads.value[url]
 
     fun startDownload(url: String, title: String) {
-        val downloadRequest = DownloadRequest.Builder(url, android.net.Uri.parse(url))
-            .setCustomCacheKey(url)
-            .setData(title.toByteArray())
-            .build()
-        DownloadService.sendAddDownload(context, DkDownloadService::class.java, downloadRequest, false)
+        runCatching {
+            val uri = android.net.Uri.parse(url)
+            val builder = DownloadRequest.Builder(url, uri).setData(title.toByteArray())
+            // A custom cache key is only legal for progressive files (mp4, mp3...). Adaptive
+            // streams (HLS/DASH/SmoothStreaming) are split into many segments, so media3
+            // rejects it with "customCacheKey must be null" — which used to crash the app.
+            if (androidx.media3.common.util.Util.inferContentType(uri) == androidx.media3.common.C.CONTENT_TYPE_OTHER) {
+                builder.setCustomCacheKey(url)
+            }
+            DownloadService.sendAddDownload(context, DkDownloadService::class.java, builder.build(), false)
+        }.onFailure {
+            android.widget.Toast.makeText(context, "Can't download this link: ${it.message}", android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 
     fun removeDownload(url: String) {
