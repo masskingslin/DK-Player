@@ -509,7 +509,7 @@ private fun DownloadStatusButton(
         when {
             isDownloading -> {
                 androidx.compose.material3.CircularProgressIndicator(
-                    progress = (downloadItem?.percentDownloaded ?: 0f) / 100f,
+                    progress = { (downloadItem?.percentDownloaded ?: 0f) / 100f },
                     modifier = Modifier.size(20.dp),
                     strokeWidth = 2.dp
                 )
