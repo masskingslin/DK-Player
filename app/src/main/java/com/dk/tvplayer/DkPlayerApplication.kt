@@ -72,6 +72,7 @@ class DkPlayerApplication : Application() {
         // real — e.g. a bad DB migration) still gets logged rather than only ever
         // being visible to whoever happens to have a debugger attached.
         CrashLogger.install(this)
+        recoverFromStartupCrashLoop()
         settingsDataStore = SettingsDataStore(this)
 
         startup = startupScope.async {
@@ -96,6 +97,28 @@ class DkPlayerApplication : Application() {
             // back to the safe default (hardware acceleration on) instead of crashing.
             runCatching { settingsDataStore.settingsFlow.first().hwAcceleration }.getOrDefault(true)
         }
+    }
+
+    /**
+     * Crash-loop guard. Every launch bumps a counter; the UI resets it once it has come up
+     * (or the app is closed cleanly). If the counter reaches 2 the previous two launches never
+     * got that far, so the saved settings file is the likeliest culprit: delete it so the app
+     * opens with defaults instead of being stuck until the user clears app data by hand.
+     */
+    private fun recoverFromStartupCrashLoop() {
+        val guard = getSharedPreferences("dk_startup_guard", MODE_PRIVATE)
+        val failures = guard.getInt("failures", 0)
+        if (failures >= 2) {
+            runCatching { java.io.File(filesDir, "datastore").deleteRecursively() }
+            guard.edit().putInt("failures", 0).commit()
+        } else {
+            guard.edit().putInt("failures", failures + 1).commit()
+        }
+    }
+
+    /** Called once the UI is up or the app was closed normally: this launch was healthy. */
+    fun markStartupHealthy() {
+        getSharedPreferences("dk_startup_guard", MODE_PRIVATE).edit().putInt("failures", 0).apply()
     }
 
     private fun buildCore(): Core {

@@ -155,6 +155,9 @@ class MainActivity : ComponentActivity() {
                 runCatching { com.dk.tvplayer.remote.RemoteAccessService.start(context) }
             }
             viewModel.notifyAppForegrounded()
+            // Startup made it all the way to a live UI: reset the crash-loop guard.
+            kotlinx.coroutines.delay(3_000)
+            app.markStartupHealthy()
         }
 
         // System-bar icon colours follow the theme (light icons on dark, dark icons on light).
@@ -317,6 +320,7 @@ class MainActivity : ComponentActivity() {
         // device's screen), or when the user opted in to background audio playback.
         if (!isInPictureInPictureMode && !FloatingPlayerState.isActive) {
             if (!isUiReady) return
+            app.markStartupHealthy()
             // Cached copy of the setting (kept current by the ViewModel) — no disk read here.
             val backgroundAudioEnabled = viewModel.effectiveBackgroundPlayback(
                 viewModel.uiState.value.appSettings.backgroundAudioPlayback
