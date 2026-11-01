@@ -2,6 +2,7 @@ package com.dk.tvplayer.ui
 
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
@@ -226,13 +227,24 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
         NavHost(
             navController = navController,
             startDestination = Screen.Home.route,
-            modifier = Modifier.padding(innerPadding),
+            // consumeWindowInsets: the outer Scaffold already applied the system-bar insets via
+            // innerPadding; without this, every nested Scaffold/TopAppBar would add them
+            // a second time under edge-to-edge (a status-bar-sized gap at the top).
+            modifier = Modifier
+                .padding(innerPadding)
+                .consumeWindowInsets(innerPadding),
             // A quick crossfade between tabs and screens reads as much more deliberate
             // than Navigation-Compose's default (an abrupt cut with no transition at all).
-            enterTransition = { fadeIn(animationSpec = androidx.compose.animation.core.tween(200)) },
-            exitTransition = { fadeOut(animationSpec = androidx.compose.animation.core.tween(150)) },
-            popEnterTransition = { fadeIn(animationSpec = androidx.compose.animation.core.tween(200)) },
-            popExitTransition = { fadeOut(animationSpec = androidx.compose.animation.core.tween(150)) }
+            enterTransition = {
+                fadeIn(androidx.compose.animation.core.tween(240)) +
+                    androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(280)) { it / 14 }
+            },
+            exitTransition = { fadeOut(androidx.compose.animation.core.tween(160)) },
+            popEnterTransition = { fadeIn(androidx.compose.animation.core.tween(240)) },
+            popExitTransition = {
+                fadeOut(androidx.compose.animation.core.tween(180)) +
+                    androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(240)) { it / 14 }
+            }
         ) {
             composable(Screen.Home.route) {
                 HomeHubScreen(
