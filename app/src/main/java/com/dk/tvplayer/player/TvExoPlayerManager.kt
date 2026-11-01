@@ -202,19 +202,35 @@ class TvExoPlayerManager(
                         .setBufferDurationsMs(window, window, playbackBuffer, playbackBuffer)
                         .build()
                 )
+            } else {
+                // Default tuned for unreliable IPTV: keep 30-60 s buffered and, after a stall,
+                // refill 8 s before resuming (the stock 5 s made playback stutter in a loop).
+                setLoadControl(
+                    androidx.media3.exoplayer.DefaultLoadControl.Builder()
+                        .setBufferDurationsMs(30_000, 60_000, 3_000, 8_000)
+                        .build()
+                )
             }
             // When a download cache is supplied, playback transparently reads from it for
             // anything that's been downloaded (see DownloadManagerHolder) and falls back
             // to the network for everything else — no special-casing needed at the call
             // site that starts playback.
             if (cacheDataSourceFactory != null) {
-                setMediaSourceFactory(DefaultMediaSourceFactory(cacheDataSourceFactory))
+                setMediaSourceFactory(
+                    DefaultMediaSourceFactory(cacheDataSourceFactory)
+                        // Retry failed segment/playlist loads 6 times (default 3) before erroring.
+                        .setLoadErrorHandlingPolicy(
+                            androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(6)
+                        )
+                )
             }
         }
         .build()
 
     /** Kept for backward compatibility with call sites that only ever used local playback (e.g. TV surface). */
     val exoPlayer: ExoPlayer get() = localPlayer
+
+    private var stallJob: kotlinx.coroutines.Job? = null
 
     private var castPlayer: CastPlayer? = null
     private var castAudioOnlyEnabled = false
@@ -496,6 +512,20 @@ class TvExoPlayerManager(
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (_activePlayer.value === player) {
                     _isBufferingFlow.value = playbackState == Player.STATE_BUFFERING
+                    // Stall watchdog: a network stream stuck buffering for 25 s without raising
+                    // an error is re-prepared (live streams jump back to the live edge).
+                    stallJob?.cancel()
+                    if (playbackState == Player.STATE_BUFFERING && player === localPlayer &&
+                        lastPlayedUrl?.startsWith("http") == true
+                    ) {
+                        stallJob = scope.launch {
+                            kotlinx.coroutines.delay(25_000)
+                            if (localPlayer.playbackState == Player.STATE_BUFFERING) {
+                                if (localPlayer.isCurrentMediaItemLive) localPlayer.seekToDefaultPosition()
+                                localPlayer.prepare()
+                            }
+                        }
+                    }
                     if (playbackState == Player.STATE_ENDED) onPlaybackEnded?.invoke()
                     if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
                         com.dk.tvplayer.util.LockscreenCover.scheduleRestore()
