@@ -4,6 +4,11 @@ on:
   push:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      minify:
+        description: 'Enable R8 shrinking (turn OFF to test a release-only crash)'
+        type: boolean
+        default: true
 
 permissions:
   contents: write   # needed to publish the APK as a GitHub Release
@@ -12,6 +17,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
+      DK_MINIFY: ${{ inputs.minify }}
       # Optional. Add these 4 repository secrets (Settings -> Secrets and variables ->
       # Actions) to sign with your own key. Without them the APK is debug-signed.
       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
