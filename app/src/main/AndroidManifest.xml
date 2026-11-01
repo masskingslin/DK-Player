@@ -49,7 +49,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.DKPlayer"
         android:usesCleartextTraffic="true"
-        tools:targetApi="35">
+        tools:targetApi="37">
 
         <activity
             android:name=".MainActivity"

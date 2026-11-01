@@ -1,0 +1,5 @@
+# Hand-written baseline profile: tells ART to ahead-of-time compile all of the app's own
+# code on install, which cuts cold-start and first-scroll jank. Names are stable because
+# obfuscation is off. Replace with a generated profile (Macrobenchmark) later if you like.
+HSPLcom/dk/tvplayer/**->**(**)**
+Lcom/dk/tvplayer/**;
