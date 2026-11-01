@@ -100,7 +100,7 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -259,7 +259,16 @@ fun PhonePlayerScreen(
 
     DisposableEffect(Unit) {
         PipState.isVideoPlayerActive = true
+        // Immersive playback: hide the status/navigation bars (swipe from the edge to peek).
+        val bars = activity?.window?.let { w ->
+            androidx.core.view.WindowCompat.getInsetsController(w, w.decorView).also {
+                it.systemBarsBehavior =
+                    androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                it.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            }
+        }
         onDispose {
+            bars?.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
             PipState.isVideoPlayerActive = false
             viewModel.savePlaybackProgress(mediaUrl, title, currentPosition, duration)
             // Per-viewing toggles: "Play as audio" and an A-B loop shouldn't silently carry
@@ -733,7 +742,14 @@ fun PhonePlayerScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.5f))
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            0f to Color.Black.copy(alpha = 0.7f),
+                            0.35f to Color.Black.copy(alpha = 0.15f),
+                            0.65f to Color.Black.copy(alpha = 0.15f),
+                            1f to Color.Black.copy(alpha = 0.8f)
+                        )
+                    )
             ) {
                 Column(modifier = Modifier.align(Alignment.TopCenter)) {
                     Row(
@@ -781,7 +797,7 @@ fun PhonePlayerScreen(
                         Text(
                             text = formatTime(if (isDraggingSlider) sliderValue.toLong() else currentPosition),
                             color = Color.White,
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.labelLarge
                         )
                         Text(
                             text = when {
@@ -851,44 +867,45 @@ fun PhonePlayerScreen(
                         }
 
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(28.dp),
+                            horizontalArrangement = Arrangement.spacedBy(20.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             IconButton(
                                 onClick = { viewModel.playerManager.seekTo((currentPosition - 10_000).coerceAtLeast(0)) },
-                                modifier = Modifier.size(48.dp)
+                                modifier = Modifier.size(56.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Replay10,
                                     contentDescription = "Rewind 10s",
                                     tint = Color.White,
-                                    modifier = Modifier.size(32.dp)
+                                    modifier = Modifier.size(38.dp)
                                 )
                             }
 
                             IconButton(
                                 onClick = { viewModel.playerManager.togglePlayPause() },
                                 modifier = Modifier
-                                    .size(56.dp)
+                                    .size(72.dp)
+                                    .background(Color.White.copy(alpha = 0.18f), CircleShape)
                                     .border(width = 1.5.dp, color = Color.White, shape = CircleShape)
                             ) {
                                 Icon(
                                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                     contentDescription = "Play/Pause",
                                     tint = Color.White,
-                                    modifier = Modifier.size(28.dp)
+                                    modifier = Modifier.size(40.dp)
                                 )
                             }
 
                             IconButton(
                                 onClick = { viewModel.playerManager.seekTo((currentPosition + 10_000).coerceAtMost(duration)) },
-                                modifier = Modifier.size(48.dp)
+                                modifier = Modifier.size(56.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Forward10,
                                     contentDescription = "Fast Forward 10s",
                                     tint = Color.White,
-                                    modifier = Modifier.size(32.dp)
+                                    modifier = Modifier.size(38.dp)
                                 )
                             }
                         }
