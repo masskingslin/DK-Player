@@ -45,6 +45,8 @@ fun TvPlayerControls(
     onPlayPause: () -> Unit,
     onNextChannel: () -> Unit,
     onPreviousChannel: () -> Unit,
+    onAspectRatio: () -> Unit,
+    onAudioTracks: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -63,8 +65,8 @@ fun TvPlayerControls(
             icon = Icons.Default.SkipPrevious,
             contentDescription = "Previous Channel",
             onClick = onPreviousChannel,
-            size = 44.dp,
-            iconSize = 26.dp
+            size = 56.dp,
+            iconSize = 32.dp
         )
 
         PlayPauseButton(isPlaying = isPlaying, onClick = onPlayPause)
@@ -73,8 +75,8 @@ fun TvPlayerControls(
             icon = Icons.Default.SkipNext,
             contentDescription = "Next Channel",
             onClick = onNextChannel,
-            size = 44.dp,
-            iconSize = 26.dp
+            size = 56.dp,
+            iconSize = 32.dp
         )
 
         Box(modifier = Modifier.size(width = 24.dp, height = 1.dp))
@@ -82,17 +84,17 @@ fun TvPlayerControls(
         TransportButton(
             icon = Icons.Default.AspectRatio,
             contentDescription = "Aspect Ratio",
-            onClick = { },
-            size = 40.dp,
-            iconSize = 20.dp
+            onClick = onAspectRatio,
+            size = 52.dp,
+            iconSize = 28.dp
         )
 
         TransportButton(
             icon = Icons.Default.Audiotrack,
             contentDescription = "Audio Tracks",
-            onClick = { },
-            size = 40.dp,
-            iconSize = 20.dp
+            onClick = onAudioTracks,
+            size = 52.dp,
+            iconSize = 28.dp
         )
     }
 }
@@ -141,6 +143,7 @@ private fun TransportButton(
             .size(size)
             .clip(CircleShape)
             .background(if (isFocused) Color.White.copy(alpha = 0.18f) else Color.Transparent)
+            .border(width = if (isFocused) 2.dp else 0.dp, color = Color.White, shape = CircleShape)
             .onFocusChanged { isFocused = it.isFocused },
         contentAlignment = Alignment.Center
     ) {
