@@ -15,5 +15,12 @@
         <!-- System Color Palette Mapping -->
         <item name="android:colorPrimary">@color/tv_primary</item>
         <item name="android:colorBackground">@color/tv_background</item>
+
+        <!-- AppCompat-namespace attributes. androidx.mediarouter (the Cast button) reads these
+             and crashes with "background can not be translucent: #0" when they are missing,
+             which they are on a plain android:Theme.Material parent. -->
+        <item name="colorPrimary">@color/tv_primary</item>
+        <item name="colorPrimaryDark">@color/tv_primary_dark</item>
+        <item name="colorAccent">@color/tv_primary</item>
     </style>
 </resources>
