@@ -374,16 +374,16 @@ fun PhonePlayerScreen(
 
     // Auto-hide brightness/volume HUD pills shortly after the last change, so they never
     // sit on screen and block the picture while a movie is playing.
-    LaunchedEffect(showBrightnessHud) {
+    LaunchedEffect(showBrightnessHud, brightnessLevel) {
         if (showBrightnessHud) {
-            delay(900)
+            delay(1000)
             showBrightnessHud = false
         }
     }
 
-    LaunchedEffect(showVolumeHud) {
+    LaunchedEffect(showVolumeHud, volumeLevel) {
         if (showVolumeHud) {
-            delay(900)
+            delay(1000)
             showVolumeHud = false
         }
     }
