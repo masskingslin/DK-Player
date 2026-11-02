@@ -706,10 +706,20 @@ fun PhonePlayerScreen(
                     if (isCastAvailable && uiState.appSettings.wirelessCastingEnabled && !castButtonFailed) {
                         AndroidView(
                             factory = { ctx ->
-                                val button = MediaRouteButton(ctx)
-                                runCatching { CastButtonFactory.setUpMediaRouteButton(ctx, button) }
-                                    .onFailure { castButtonFailed = true }
-                                button
+                                // Wrapped in an AppCompat theme: MediaRouteButton crashes when its
+                                // context lacks colorPrimary & co. Any failure hides the button.
+                                runCatching {
+                                    val themed = androidx.appcompat.view.ContextThemeWrapper(
+                                        ctx,
+                                        androidx.appcompat.R.style.Theme_AppCompat
+                                    )
+                                    MediaRouteButton(themed).also {
+                                        CastButtonFactory.setUpMediaRouteButton(ctx.applicationContext, it)
+                                    }
+                                }.getOrElse {
+                                    castButtonFailed = true
+                                    android.view.View(ctx)
+                                }
                             },
                             modifier = Modifier.size(48.dp)
                         )
