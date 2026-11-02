@@ -41,6 +41,9 @@ jobs:
         with:
           gradle-version: '9.4.1'
 
+      - name: Check source files arrived complete
+        run: python3 tools/check_sources.py
+
       - name: Decode release keystore (if configured)
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
