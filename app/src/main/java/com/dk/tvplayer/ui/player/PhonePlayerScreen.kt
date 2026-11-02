@@ -267,6 +267,8 @@ fun PhonePlayerScreen(
     // can't seek, pause, or otherwise disrupt playback.
     var isLocked by remember { mutableStateOf(false) }
     var showUnlockButton by remember { mutableStateOf(false) }
+    // Tap the right-hand time to flip between total length and time remaining.
+    var showRemainingTime by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
 
     val repeatMode by viewModel.playerManager.repeatModeFlow.collectAsState()
     val abRepeat by viewModel.playerManager.abRepeatStateFlow.collectAsState()
@@ -948,7 +950,19 @@ fun PhonePlayerScreen(
                                 ),
                                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
                             )
-                            Text(text = formatPlayerTime(duration), color = Color.White)
+                            val shownPosition = if (isDraggingSlider) sliderValue.toLong() else currentPosition
+                            Text(
+                                text = if (showRemainingTime) {
+                                    "-" + formatPlayerTime((duration - shownPosition).coerceAtLeast(0L))
+                                } else {
+                                    formatPlayerTime(duration)
+                                },
+                                color = Color.White,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable { showRemainingTime = !showRemainingTime }
+                                    .padding(horizontal = 6.dp, vertical = 10.dp)
+                            )
                         }
                     }
                     Row(
