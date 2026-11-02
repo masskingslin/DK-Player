@@ -7,7 +7,7 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.util.Rational
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
@@ -65,7 +65,9 @@ object FloatingPlayerState {
     var isActive: Boolean = false
 }
 
-class MainActivity : ComponentActivity() {
+// FragmentActivity (a ComponentActivity subclass) is required: the Cast button opens its
+// device chooser as a DialogFragment and throws on a plain ComponentActivity.
+class MainActivity : FragmentActivity() {
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
