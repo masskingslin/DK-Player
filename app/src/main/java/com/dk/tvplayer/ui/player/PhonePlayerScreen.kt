@@ -413,4 +413,3 @@ fun PhonePlayerScreen(
                     }
                     Key.Back, Key.Escape -> {
                         onBack(); true
-  
