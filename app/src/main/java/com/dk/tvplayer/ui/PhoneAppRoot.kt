@@ -414,8 +414,8 @@ fun PhoneAppRoot(viewModel: TvPlayerViewModel) {
                 val isLive = backStackEntry.arguments?.getBoolean("isLive") ?: false
 
                 PhonePlayerScreen(
-                    mediaUrl = mediaUrl,
-                    title = title,
+                    startUrl = mediaUrl,
+                    startTitle = title,
                     isLive = isLive,
                     viewModel = viewModel,
                     onBack = { navController.popBackStack() }
