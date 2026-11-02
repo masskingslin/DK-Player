@@ -38,6 +38,8 @@ import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.QueuePlayNext
+import androidx.compose.material.icons.filled.Tune
+import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Headphones
@@ -484,7 +486,50 @@ fun VideoLibraryScreen(
     // Local-only search + sort (separate from the global channel search/sort in TvUiState,
     // since local video scanning is a plain in-memory list local to this screen).
     var localSearchQuery by remember { mutableStateOf("") }
-    var localSortOption by remember { mutableStateOf(SortOption.NAME_ASC) }
+    var localSort by remember { mutableStateOf(LocalSort.NAME_ASC) }
+    var onlyFavourites by remember { mutableStateOf(false) }
+    var listLayout by remember { mutableStateOf(false) }
+    var showDisplaySheet by remember { mutableStateOf(false) }
+    // Multi-select (long-press a card): keys of the selected display items.
+    var selectedKeys by remember { mutableStateOf(setOf<String>()) }
+    val selecting = selectedKeys.isNotEmpty()
+    var multiPlaylistTarget by remember { mutableStateOf<List<LocalVideoItem>?>(null) }
+    var multiGroupTarget by remember { mutableStateOf<List<LocalVideoItem>?>(null) }
+    BackHandler(enabled = selecting) { selectedKeys = emptySet() }
+
+    multiPlaylistTarget?.let { videos ->
+        AddToPlaylistDialog(
+            playlists = state.playlists,
+            onDismiss = { multiPlaylistTarget = null },
+            onPick = { playlist ->
+                videos.forEach { viewModel.addCustomItemToPlaylist(playlist.id, it.name, it.filePath) }
+                multiPlaylistTarget = null
+                selectedKeys = emptySet()
+            },
+            onCreateNew = { name ->
+                viewModel.createPlaylistAndAddItems(name, videos.map { it.name to it.filePath })
+                multiPlaylistTarget = null
+                selectedKeys = emptySet()
+            }
+        )
+    }
+
+    multiGroupTarget?.let { videos ->
+        AddToVideoGroupDialog(
+            groups = state.videoGroups,
+            onDismiss = { multiGroupTarget = null },
+            onPickExisting = { group ->
+                viewModel.addVideosToGroup(group.id, videos)
+                multiGroupTarget = null
+                selectedKeys = emptySet()
+            },
+            onCreateNew = { name ->
+                viewModel.createVideoGroup(name, videos)
+                multiGroupTarget = null
+                selectedKeys = emptySet()
+            }
+        )
+    }
 
     LaunchedEffect(Unit) {
         viewModel.refreshLocalVideos()
@@ -502,7 +547,9 @@ fun VideoLibraryScreen(
         }
 
         if (selectedTab == 0) {
-            Row(
+            // The selection bar's actions need the visible items, so it is rendered further
+            // down once they are computed; this row is the normal search + display button.
+            if (!selecting) Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -517,19 +564,33 @@ fun VideoLibraryScreen(
                     singleLine = true
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                SortMenuButton(current = localSortOption, onSelected = { localSortOption = it })
+                IconButton(onClick = { showDisplaySheet = true }) {
+                    Icon(Icons.Default.Tune, contentDescription = "Display settings")
+                }
+            }
+
+            if (showDisplaySheet) {
+                LocalDisplaySettingsSheet(
+                    sort = localSort,
+                    onSort = { localSort = it },
+                    listLayout = listLayout,
+                    onListLayout = { listLayout = it },
+                    onlyFavourites = onlyFavourites,
+                    onOnlyFavourites = { onlyFavourites = it },
+                    onDismiss = { showDisplaySheet = false }
+                )
             }
 
             val displayItems = remember(state.localVideos, state.videoGroups, state.localVideoMeta) {
                 LocalVideoGrouping.buildDisplayItems(state.localVideos, state.videoGroups, state.localVideoMeta)
             }
 
-            val filteredItems = remember(displayItems, localSearchQuery, localSortOption) {
+            val filteredItems = remember(displayItems, localSearchQuery, localSort, onlyFavourites, favoritePaths) {
                 fun label(item: LocalVideoDisplayItem) = when (item) {
                     is LocalVideoDisplayItem.Single -> item.video.name
                     is LocalVideoDisplayItem.Group -> item.displayName
                 }
-                val filtered = if (localSearchQuery.isBlank()) {
+                var filtered = if (localSearchQuery.isBlank()) {
                     displayItems
                 } else {
                     displayItems.filter { item ->
@@ -541,11 +602,105 @@ fun VideoLibraryScreen(
                         }
                     }
                 }
-                when (localSortOption) {
-                    SortOption.NAME_ASC -> filtered.sortedBy { label(it).lowercase() }
-                    SortOption.NAME_DESC -> filtered.sortedByDescending { label(it).lowercase() }
-                    SortOption.RECENTLY_ADDED -> filtered.asReversed()
-                    SortOption.FAVORITES_FIRST -> filtered // local videos have no favorites concept
+                if (onlyFavourites) {
+                    filtered = filtered.filter { item ->
+                        when (item) {
+                            is LocalVideoDisplayItem.Single -> favoritePaths.contains(item.video.filePath)
+                            is LocalVideoDisplayItem.Group -> item.videos.any { favoritePaths.contains(it.filePath) }
+                        }
+                    }
+                }
+                when (localSort) {
+                    LocalSort.NAME_ASC -> filtered.sortedBy { label(it).lowercase() }
+                    LocalSort.NAME_DESC -> filtered.sortedByDescending { label(it).lowercase() }
+                    LocalSort.LENGTH_ASC -> filtered.sortedBy { it.durationMs() }
+                    LocalSort.LENGTH_DESC -> filtered.sortedByDescending { it.durationMs() }
+                    LocalSort.ADDED_OLD -> filtered.sortedBy { it.addedOrder() }
+                    LocalSort.ADDED_NEW -> filtered.sortedByDescending { it.addedOrder() }
+                    LocalSort.TRACKS_MORE -> filtered.sortedByDescending { it.trackCount() }
+                    LocalSort.TRACKS_LESS -> filtered.sortedBy { it.trackCount() }
+                }
+            }
+
+            // ---- Multi-select bar (VLC style) ----
+            val selectedVideos = remember(filteredItems, selectedKeys) {
+                filteredItems.filter { it.key in selectedKeys }.flatMap { item ->
+                    when (item) {
+                        is LocalVideoDisplayItem.Single -> listOf(item.video)
+                        is LocalVideoDisplayItem.Group -> item.videos
+                    }
+                }
+            }
+            if (selecting) {
+                LocalSelectionBar(
+                    count = selectedKeys.size,
+                    totalDurationMs = selectedVideos.sumOf { it.duration },
+                    onClose = { selectedKeys = emptySet() },
+                    onPlay = {
+                        selectedVideos.firstOrNull()?.let { first ->
+                            viewModel.replaceQueue(selectedVideos.drop(1))
+                            onPlayVideo(first.filePath, first.name, false)
+                        }
+                        selectedKeys = emptySet()
+                    },
+                    onQueue = {
+                        viewModel.enqueueAll(selectedVideos)
+                        Toast.makeText(context, "Added to play queue", Toast.LENGTH_SHORT).show()
+                        selectedKeys = emptySet()
+                    },
+                    onPlaylist = { multiPlaylistTarget = selectedVideos },
+                    onGroup = { multiGroupTarget = selectedVideos }
+                )
+            }
+
+            // One cell for every list/grid item: card or compact row, with selection overlay.
+            val cell: @Composable (LocalVideoDisplayItem, Modifier) -> Unit = { item, cellModifier ->
+                val selected = item.key in selectedKeys
+                val toggle: () -> Unit = {
+                    selectedKeys = if (selected) selectedKeys - item.key else selectedKeys + item.key
+                }
+                val open: () -> Unit = {
+                    if (selecting) toggle() else when (item) {
+                        is LocalVideoDisplayItem.Single -> onPlayVideo(item.video.filePath, item.video.name, false)
+                        is LocalVideoDisplayItem.Group -> groupPlaybackTarget = item
+                    }
+                }
+                val menu: () -> Unit = {
+                    when (item) {
+                        is LocalVideoDisplayItem.Single -> menuVideo = item.video
+                        is LocalVideoDisplayItem.Group -> menuGroup = item
+                    }
+                }
+                SelectableFrame(selected = selected, modifier = cellModifier) {
+                    if (listLayout) {
+                        LocalVideoListRow(
+                            item = item,
+                            isFavorite = when (item) {
+                                is LocalVideoDisplayItem.Single -> favoritePaths.contains(item.video.filePath)
+                                is LocalVideoDisplayItem.Group -> false
+                            },
+                            isPlayed = (item as? LocalVideoDisplayItem.Single)?.isPlayed == true && showSeenMarker,
+                            onClick = open,
+                            onLongClick = toggle,
+                            onMenu = menu
+                        )
+                    } else when (item) {
+                        is LocalVideoDisplayItem.Single -> LocalVideoCard(
+                            video = item.video,
+                            showThumbnail = state.appSettings.videoThumbnailsEnabled,
+                            isPlayed = item.isPlayed && showSeenMarker,
+                            isFavorite = favoritePaths.contains(item.video.filePath),
+                            onClick = open,
+                            onLongClick = toggle,
+                            onMenuClick = menu
+                        )
+                        is LocalVideoDisplayItem.Group -> VideoGroupCard(
+                            group = item,
+                            onClick = open,
+                            onLongClick = toggle,
+                            onMenuClick = menu
+                        )
+                    }
                 }
             }
 
@@ -572,14 +727,14 @@ fun VideoLibraryScreen(
                 }
             } else {
                 LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 160.dp),
+                    columns = if (listLayout) GridCells.Fixed(1) else GridCells.Adaptive(minSize = 160.dp),
                     contentPadding = PaddingValues(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     val showHeaders = state.appSettings.showListHeaders &&
-                        (localSortOption == SortOption.NAME_ASC || localSortOption == SortOption.NAME_DESC)
+                        (localSort == LocalSort.NAME_ASC || localSort == LocalSort.NAME_DESC)
 
                     fun itemLabel(item: LocalVideoDisplayItem) = when (item) {
                         is LocalVideoDisplayItem.Single -> item.video.name
@@ -601,49 +756,13 @@ fun VideoLibraryScreen(
                                 )
                             }
                             gridItems(headerItems, key = { it.key }) { item ->
-                                when (item) {
-                                    is LocalVideoDisplayItem.Single -> LocalVideoCard(
-                                        video = item.video,
-                                        showThumbnail = state.appSettings.videoThumbnailsEnabled,
-                                        isPlayed = item.isPlayed && showSeenMarker,
-                                        isFavorite = favoritePaths.contains(item.video.filePath),
-                                        onClick = { onPlayVideo(item.video.filePath, item.video.name, false) },
-                                        onLongClick = { menuVideo = item.video },
-                                        onMenuClick = { menuVideo = item.video },
-                                        modifier = Modifier.animateItem()
-                                    )
-                                    is LocalVideoDisplayItem.Group -> VideoGroupCard(
-                                        group = item,
-                                        onClick = { groupPlaybackTarget = item },
-                                        onLongClick = { menuGroup = item },
-                                        onMenuClick = { menuGroup = item },
-                                        modifier = Modifier.animateItem()
-                                    )
-                                }
+                                cell(item, Modifier.animateItem())
                             }
                         }
                     } else {
                         gridItems(filteredItems, key = { it.key }) { item ->
-                            when (item) {
-                                is LocalVideoDisplayItem.Single -> LocalVideoCard(
-                                    video = item.video,
-                                    showThumbnail = state.appSettings.videoThumbnailsEnabled,
-                                    isPlayed = item.isPlayed && showSeenMarker,
-                                        isFavorite = favoritePaths.contains(item.video.filePath),
-                                    onClick = { onPlayVideo(item.video.filePath, item.video.name, false) },
-                                    onLongClick = { menuVideo = item.video },
-                                        onMenuClick = { menuVideo = item.video },
-                                    modifier = Modifier.animateItem()
-                                )
-                                is LocalVideoDisplayItem.Group -> VideoGroupCard(
-                                    group = item,
-                                    onClick = { groupPlaybackTarget = item },
-                                    onLongClick = { menuGroup = item },
-                                        onMenuClick = { menuGroup = item },
-                                    modifier = Modifier.animateItem()
-                                )
+                                cell(item, Modifier.animateItem())
                             }
-                        }
                     }
                 }
             }
