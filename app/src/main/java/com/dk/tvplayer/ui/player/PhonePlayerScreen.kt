@@ -344,7 +344,10 @@ fun PhonePlayerScreen(
         onDispose {
             bars?.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
             PipState.isVideoPlayerActive = false
-            viewModel.savePlaybackProgress(mediaUrl, title, currentPosition, duration)
+            // Never overwrite a good saved position with 0 (the player may already be reset).
+            if (!isLive && currentChannel == null && currentPosition > 0L && duration > 0L) {
+                viewModel.savePlaybackProgress(mediaUrl, title, currentPosition, duration)
+            }
             // Per-viewing toggles: "Play as audio" and an A-B loop shouldn't silently carry
             // over into whatever gets played next.
             viewModel.playerManager.setAudioOnlyModeEnabled(false)
@@ -406,6 +409,33 @@ fun PhonePlayerScreen(
             (clamped * maxVolume).roundToInt(),
             0
         )
+    }
+
+    // ---- Remember where you stopped (resume later) ----
+    // The old code only saved when this screen was disposed cleanly, so pausing and then
+    // closing/killing the app lost the position. Save on pause, every few seconds while
+    // playing, and whenever the app leaves the foreground.
+    fun saveProgressNow() {
+        if (isLive || currentChannel != null) return
+        val d = activePlayer.duration
+        val pos = activePlayer.currentPosition
+        if (d <= 0L || pos <= 0L) return
+        viewModel.savePlaybackProgress(mediaUrl, title, pos, d)
+    }
+    LaunchedEffect(isPlaying, mediaUrl) {
+        // Fires on play/pause changes (a pause is saved immediately), then loops while playing.
+        saveProgressNow()
+        while (isPlaying) {
+            delay(3000)
+            saveProgressNow()
+        }
+    }
+    DisposableEffect(lifecycleOwner, activePlayer) {
+        val saver = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) saveProgressNow()
+        }
+        lifecycleOwner.lifecycle.addObserver(saver)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(saver) }
     }
 
     // "Prefer clone" off + a secondary display attached: play the video there and let this
