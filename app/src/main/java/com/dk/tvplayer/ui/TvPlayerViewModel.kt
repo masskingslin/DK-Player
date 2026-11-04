@@ -464,6 +464,19 @@ class TvPlayerViewModel(
      */
     fun playMedia(url: String, title: String) {
         viewModelScope.launch {
+            // Already loaded and alive (screen re-entered, pop-up/PiP handoff, recomposition…):
+            // leave it alone. Re-issuing play() would re-apply a stale saved position and make
+            // the time jump back. Live channels are excluded — they re-issue play() on purpose
+            // to apply per-channel headers.
+            run {
+                val ex = playerManager.exoPlayer
+                val isChannel = _uiState.value.channels.any { it.streamUrl == url }
+                if (!isChannel && playerManager.currentMediaUrl == url && ex.mediaItemCount > 0 &&
+                    ex.playbackState != androidx.media3.common.Player.STATE_IDLE &&
+                    ex.playbackState != androidx.media3.common.Player.STATE_ENDED &&
+                    skipResumeUrl != url
+                ) return@launch
+            }
             val settings = _uiState.value.appSettings
             val skipResume = skipResumeUrl == url
             if (skipResume) skipResumeUrl = null
