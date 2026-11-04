@@ -122,6 +122,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.mediarouter.app.MediaRouteButton
 import com.dk.tvplayer.MainActivity
+import com.dk.tvplayer.FloatingPlayerState
 import com.dk.tvplayer.PipState
 import com.dk.tvplayer.player.FloatingPlayerService
 import com.dk.tvplayer.ui.TvPlayerViewModel
@@ -345,8 +346,29 @@ fun PhonePlayerScreen(
             bars?.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
             PipState.isVideoPlayerActive = false
             // Never overwrite a good saved position with 0 (the player may already be reset).
-            if (!isLive && currentChannel == null && currentPosition > 0L && duration > 0L) {
+            if (!isLive && currentChannel == null && currentPosition > 0L && duration > 0L &&
+                viewModel.playerManager.currentMediaUrl == mediaUrl
+            ) {
                 viewModel.savePlaybackProgress(mediaUrl, title, currentPosition, duration)
+            }
+            // Leaving the player = stop the video. It used to keep playing (audio) behind the
+            // video list. Kept alive only for: pop-up window, PiP, screen rotation/recreation,
+            // casting, and audio files (music keeps playing like a music player).
+            val isAudioFile = mediaUrl.substringAfterLast('.', "").lowercase() in
+                setOf("mp3", "m4a", "flac", "ogg", "opus", "aac", "wav", "wma")
+            val keepPlaying = FloatingPlayerState.isActive ||
+                activity?.isInPictureInPictureMode == true ||
+                activity?.isChangingConfigurations == true ||
+                viewModel.playerManager.isCastingFlow.value ||
+                isAudioFile
+            if (!keepPlaying) {
+                runCatching {
+                    viewModel.playerManager.exoPlayer.apply {
+                        pause()
+                        stop()
+                        clearMediaItems()
+                    }
+                }
             }
             // Per-viewing toggles: "Play as audio" and an A-B loop shouldn't silently carry
             // over into whatever gets played next.
@@ -417,6 +439,10 @@ fun PhonePlayerScreen(
     // playing, and whenever the app leaves the foreground.
     fun saveProgressNow() {
         if (isLive || currentChannel != null) return
+        // The shared player may still hold a DIFFERENT (previous) video while this one is
+        // loading — never file that video's position under this one's name.
+        if (viewModel.playerManager.currentMediaUrl != mediaUrl) return
+        if (activePlayer.playbackState == Player.STATE_IDLE) return
         val d = activePlayer.duration
         val pos = activePlayer.currentPosition
         if (d <= 0L || pos <= 0L) return
